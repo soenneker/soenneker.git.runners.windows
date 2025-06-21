@@ -52,30 +52,14 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         // 4) install host-side build deps
         _logger.LogInformation("Installing native build dependencies…");
         var installScript =
-            "sudo apt-get update && "
-            + "sudo apt-get install -y "
-            + "build-essential "
-            + "musl-tools "
-            + "pkg-config "
-            + "libcurl4-openssl-dev "
-            + "libssl-dev "
-            + "libexpat1-dev "
-            + "zlib1g-dev "
-            + "tcl-dev "
-            + "tk-dev "
-            + "perl "
-            + "libperl-dev "
-            + "libreadline-dev "
-            + "gettext "            // provides autopoint
-            + "autoconf "           // for generating configure scripts
-            + "automake "           // provides aclocal, a dependency of intltool
-            + "intltool "           // provides intltoolize
-            + "gperf "
-            + "libtool "
-            + "lzip "
-            + "python3-mako "       // provides mako-render
-            + "libgdk-pixbuf2.0-dev"; // provides gdk-pixbuf-csource
-
+            "sudo apt-get update && " +
+            "sudo apt-get install -y " +
+            "build-essential musl-tools pkg-config " +
+            "libcurl4-openssl-dev libssl-dev libexpat1-dev zlib1g-dev " +
+            "tcl-dev tk-dev perl libperl-dev libreadline-dev " +
+            "gettext autoconf automake intltool libtool libtool-bin " +
+            "bison bzip2 flex gperf libgdk-pixbuf2.0-dev lzip " +
+            "openssl patch python3 python3-mako ruby sed unzip wget xz-utils p7zip-full";
         await _processUtil.ShellRun(installScript, tempDir, cancellationToken);
 
         // 5) clone MXE cross-toolchain
