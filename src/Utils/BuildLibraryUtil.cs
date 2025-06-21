@@ -85,7 +85,7 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         // 6) patch config.mak
         _logger.LogInformation("Patching config.mak.sample to fold helpers into built-in git.exe...");
         string gitDir = extractPath.Replace(':', '/');
-        string snippet = $"cd {gitDir} && " + "cp config.mak.sample config.mak && " +
+        string snippet = $"cd {gitDir} && " + "cp config.mak.dev config.mak && " +
                          // wrap the sed script in '\'' … '\''
                          "sed -i -E '\\''s/^BUILTIN_LIST = (.*)$/BUILTIN_LIST = \\1 remote-https remote-ssh credential-manager http-backend/'\\'' config.mak";
         await _processUtil.ShellRun(snippet, tempDir, cancellationToken);
