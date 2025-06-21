@@ -50,9 +50,31 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         await _fileDownloadUtil.Download(downloadUrl, archivePath, cancellationToken: cancellationToken);
 
         // 4) install host-side build deps
-        _logger.LogInformation("Installing build dependencies via apt-get...");
-        var installDeps = "sudo apt-get update && sudo apt-get install -y build-essential autoconf automake libtool pkg-config wget unzip git";
-        await _processUtil.ShellRun(installDeps, tempDir, cancellationToken);
+        _logger.LogInformation("Installing native build dependencies…");
+        var installScript =
+            "sudo apt-get update && "
+            + "sudo apt-get install -y "
+            + "build-essential "
+            + "musl-tools "
+            + "pkg-config "
+            + "libcurl4-openssl-dev "
+            + "libssl-dev "
+            + "libexpat1-dev "
+            + "zlib1g-dev "
+            + "tcl-dev "
+            + "tk-dev "
+            + "perl "
+            + "libperl-dev "
+            + "libreadline-dev "
+            + "gettext "            // provides autopoint
+            + "intltool "           // provides intltoolize
+            + "gperf "
+            + "libtool "
+            + "lzip "
+            + "python3-mako "       // provides mako-render
+            + "libgdk-pixbuf2.0-dev"; // provides gdk-pixbuf-csource
+
+        await _processUtil.ShellRun(installScript, tempDir, cancellationToken);
 
         // 5) clone MXE cross-toolchain
         _logger.LogInformation("Cloning MXE cross toolchain...");
