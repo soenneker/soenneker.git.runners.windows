@@ -115,10 +115,10 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         string stagingDir = Path.Combine(tempDir, "install");
         await _processUtil.ShellRun($"{ReproEnv} cd {extractPath.Replace(':', '/')} && make install DESTDIR={stagingDir}", tempDir, cancellationToken);
 
-        _logger.LogInformation("Locating git.exe in build tree…");
-        var exeFiles = Directory.GetFiles(extractPath, "git.exe", SearchOption.AllDirectories);
+        _logger.LogInformation("Locating git.exe in staging directory…");
+        var exeFiles = Directory.GetFiles(stagingDir, "git.exe", SearchOption.AllDirectories);
         if (exeFiles.Length == 0)
-            throw new FileNotFoundException("git.exe not found in build directories", extractPath);
+            throw new FileNotFoundException("git.exe not found in staging directory", stagingDir);
         string gitExe = exeFiles[0];
 
         // 11) strip the installed exe
