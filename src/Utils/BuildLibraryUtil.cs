@@ -110,27 +110,30 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         _logger.LogInformation("Building Git for Windows...");
         await _processUtil.ShellRun($"{ReproEnv} cd {extractPath.Replace(':', '/')} && make -j{Environment.ProcessorCount}", tempDir, cancellationToken);
 
+        // =========================================================================
+        // ADD THIS BLOCK FOR DIAGNOSTICS (BEFORE INSTALL)
+        // =========================================================================
+        _logger.LogInformation("--- DIAGNOSTIC: Listing build directory contents before install ---");
+        await _processUtil.ShellRun($"ls -R {extractPath.Replace(':', '/')}", tempDir, cancellationToken);
+        // =========================================================================
+
         // 10) install into staging directory
         _logger.LogInformation("Installing Git into staging dir…");
         string stagingDir = Path.Combine(tempDir, "install");
         await _processUtil.ShellRun($"{ReproEnv} cd {extractPath.Replace(':', '/')} && make install DESTDIR={stagingDir}", tempDir, cancellationToken);
+
+        // =========================================================================
+        // ADD THIS BLOCK FOR DIAGNOSTICS (AFTER INSTALL)
+        // =========================================================================
+        _logger.LogInformation("--- DIAGNOSTIC: Listing staging directory contents after install ---");
+        await _processUtil.ShellRun($"ls -R {stagingDir}", tempDir, cancellationToken);
+        // =========================================================================
 
         _logger.LogInformation("Locating git.exe in staging directory…");
         var exeFiles = Directory.GetFiles(stagingDir, "git.exe", SearchOption.AllDirectories);
         if (exeFiles.Length == 0)
             throw new FileNotFoundException("git.exe not found in staging directory", stagingDir);
         string gitExe = exeFiles[0];
-
-        // 11) strip the installed exe
-
-        _logger.LogInformation("Stripping git.exe at {path}", gitExe);
-        await _processUtil.ShellRun($"{ReproEnv} strip {gitExe}", tempDir, cancellationToken);
-
-        if (!File.Exists(gitExe))
-            throw new FileNotFoundException("git.exe not found after install and strip", gitExe);
-
-        _logger.LogInformation("Built static git.exe at {path}", gitExe);
-        return gitExe;
     }
 
     public async ValueTask<string> GetLatestStableGitTag(CancellationToken cancellationToken = default)
