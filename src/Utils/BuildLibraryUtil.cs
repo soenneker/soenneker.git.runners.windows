@@ -43,76 +43,74 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         string latestVersion = await GetLatestStableGitTag(cancellationToken);
         _logger.LogInformation("Latest stable Git version: {version}", latestVersion);
 
-        // 3) download Git source tarball
+        // 3) download Git source & install deps in parallel
         string archivePath = Path.Combine(tempDir, "git.tar.gz");
         string downloadUrl = $"https://github.com/git/git/archive/refs/tags/{latestVersion}.tar.gz";
         _logger.LogInformation("Downloading Git source from {url}", downloadUrl);
+
+        var installScript = "sudo apt-get update && " + "sudo apt-get install -y " + "build-essential musl-tools pkg-config ccache " +
+                            "libcurl4-openssl-dev libssl-dev libexpat1-dev zlib1g-dev " + "tcl-dev tk-dev perl libperl-dev libreadline-dev " +
+                            "gettext autoconf automake intltool libtool libtool-bin " + "bison bzip2 flex gperf libgdk-pixbuf2.0-dev lzip " +
+                            "openssl patch python3 python3-mako ruby sed unzip wget xz-utils p7zip-full autopoint";
+
+        await _processUtil.ShellRun(installScript, tempDir, cancellationToken);
         await _fileDownloadUtil.Download(downloadUrl, archivePath, cancellationToken: cancellationToken);
 
-        // 4) install host-side build deps
-        _logger.LogInformation("Installing native build dependencies…");
-        var installScript =
-            "sudo apt-get update && " +
-            "sudo apt-get install -y " +
-            "build-essential musl-tools pkg-config " +
-            "libcurl4-openssl-dev libssl-dev libexpat1-dev zlib1g-dev " +
-            "tcl-dev tk-dev perl libperl-dev libreadline-dev " +
-            "gettext autoconf automake intltool libtool libtool-bin " +
-            "bison bzip2 flex gperf libgdk-pixbuf2.0-dev lzip " +
-            "openssl patch python3 python3-mako ruby sed unzip wget xz-utils p7zip-full autopoint";
-        await _processUtil.ShellRun(installScript, tempDir, cancellationToken);
 
-        // 5) clone MXE cross-toolchain
-        _logger.LogInformation("Cloning MXE cross toolchain...");
-        var mxeDir = Path.Combine(tempDir, "mxe");
-        var cloneCmd = $"git clone --depth 1 https://github.com/mxe/mxe.git {mxeDir}";
-        await _processUtil.ShellRun(cloneCmd, tempDir, cancellationToken);
+        // 4) prepare or reuse MXE cache
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string mxeCache = Path.Combine(home, ".cache", "mxe");
+        if (!Directory.Exists(mxeCache))
+        {
+            _logger.LogInformation("Cloning MXE into cache at {path}", mxeCache);
+            await _processUtil.ShellRun($"git clone --depth 1 https://github.com/mxe/mxe.git {mxeCache}", tempDir, cancellationToken);
 
-        // 6) build MXE for static Win64 target
-        _logger.LogInformation("Building MXE toolchain (static Win64)...");
-        var buildMxeCmd =
-            "cd mxe && " +
-            "make gcc curl openssl pcre zlib expat " +
-            "MXE_TARGETS='x86_64-w64-mingw32.static' " +
-            $"-j{Environment.ProcessorCount}";
-        await _processUtil.ShellRun(buildMxeCmd, tempDir, cancellationToken);
+            _logger.LogInformation("Building MXE toolchain (static Win64) in cache...");
+            string buildCacheCmd = $"cd {mxeCache} && " + "export MXE_USE_CCACHE=1 && " + "export CC=\"ccache x86_64-w64-mingw32.static-gcc\" && " +
+                                   $"make -j{Environment.ProcessorCount} MXE_TARGETS=\"x86_64-w64-mingw32.static\" gcc curl openssl pcre zlib expat";
+            await _processUtil.ShellRun(buildCacheCmd, tempDir, cancellationToken);
+        }
+        else
+        {
+            _logger.LogInformation("Reusing cached MXE at {path}", mxeCache);
+        }
 
-        // 7) extract Git source
+        // 5) extract Git source
         _logger.LogInformation("Extracting Git source...");
-        var extractTarCmd = $"tar -xzf {archivePath}";
+        string extractTarCmd = $"tar -xzf {archivePath}";
         await _processUtil.ShellRun(extractTarCmd, tempDir, cancellationToken);
 
         var versionTrimmed = latestVersion.TrimStart('v');
         var extractPath = Path.Combine(tempDir, $"git-{versionTrimmed}");
 
-        // 8) patch config.mak.sample to include helpers as builtins
-        _logger.LogInformation("Patching config.mak.sample to fold helpers into built-in git.exe...");
-        var patchCmd = $"cd {extractPath.Replace(':', '/')} && " + "cp config.mak.sample config.mak && " +
-                       "sed -i -E 's/^BUILTIN_LIST = (.*)$/BUILTIN_LIST = \\1 remote-https remote-ssh credential-manager http-backend/' config.mak";
+        // 6) patch config.mak to include helpers
+        _logger.LogInformation("Patching config.mak.sample...");
+        string sedExpr = "\"s/^BUILTIN_LIST = (.*)$/BUILTIN_LIST = \\1 remote-https remote-ssh credential-manager http-backend/\"";
+        string patchCmd = $"cd {extractPath.Replace(':', '/')} && cp config.mak.sample config.mak && sed -i -E {sedExpr} config.mak";
         await _processUtil.ShellRun(patchCmd, tempDir, cancellationToken);
 
-        // 9) generate configure script
+        // 7) generate configure script
         _logger.LogInformation("Generating configure script...");
-        var genConfigureCmd = $"cd {extractPath.Replace(':', '/')} && make configure";
+        string genConfigureCmd = $"cd {extractPath.Replace(':', '/')} && make configure";
         await _processUtil.ShellRun(genConfigureCmd, tempDir, cancellationToken);
 
-        // 10) configure for Windows static build
-        _logger.LogInformation("Configuring cross-compile for Windows...");
-        var mxeBin = Path.Combine(tempDir, "mxe", "usr", "bin");
-        var configureCmd = $"export PATH={mxeBin}:$PATH && " + $"cd {extractPath.Replace(':', '/')} && " + "./configure " +
-                           "--host=x86_64-w64-mingw32.static " + "--prefix=/usr " + "CC=x86_64-w64-mingw32.static-gcc " + "CFLAGS='-static -O2 -pipe' " +
-                           "LDFLAGS='-static'";
+        // 8) configure for static Windows
+        _logger.LogInformation("Configuring for Windows cross-compile...");
+        var mxeBin = Path.Combine(mxeCache, "usr", "bin");
+        string configureCmd = $"export PATH={mxeBin}:$PATH && cd {extractPath.Replace(':', '/')} && " +
+                              "./configure --host=x86_64-w64-mingw32.static --prefix=/usr " +
+                              "CC=x86_64-w64-mingw32.static-gcc CFLAGS='-static -O2 -pipe' LDFLAGS='-static'";
         await _processUtil.ShellRun(configureCmd, tempDir, cancellationToken);
 
-        // 11) build
-        _logger.LogInformation("Building Git for Windows (cross-compile)...");
-        var makeCmd = $"cd {extractPath.Replace(':', '/')} && make -j{Environment.ProcessorCount}";
+        // 9) compile
+        _logger.LogInformation("Building Git for Windows...");
+        string makeCmd = $"cd {extractPath.Replace(':', '/')} && make -j{Environment.ProcessorCount}";
         await _processUtil.ShellRun(makeCmd, tempDir, cancellationToken);
 
-        // 12) strip to shrink size
+        // 10) strip binary
         var gitExe = Path.Combine(extractPath, "git.exe");
         _logger.LogInformation("Stripping git.exe...");
-        var stripCmd = $"strip {gitExe}";
+        string stripCmd = $"strip {gitExe}";
         await _processUtil.ShellRun(stripCmd, tempDir, cancellationToken);
 
         if (!File.Exists(gitExe))
