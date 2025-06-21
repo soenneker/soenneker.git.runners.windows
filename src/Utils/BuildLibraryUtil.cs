@@ -19,9 +19,11 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
 {
     private const string ReproEnv = "SOURCE_DATE_EPOCH=1620000000 TZ=UTC LC_ALL=C";
 
-    private const string InstallScript = "sudo apt-get update && sudo apt-get install -y build-essential pkg-config ccache " + "perl " +
-                                         "gettext autoconf automake intltool libtool libtool-bin bison bzip2 flex gperf lzip " +
-                                         "openssl patch python3 python3-mako ruby sed unzip wget xz-utils p7zip-full autopoint";
+    private const string InstallScript =
+        "sudo apt-get update && sudo apt-get install -y " +
+        "build-essential pkg-config ccache perl gettext autoconf automake intltool libtool libtool-bin " +
+        "bison bzip2 flex gperf lzip openssl patch python3 python3-mako ruby sed unzip wget xz-utils p7zip-full autopoint " +
+        "libcurl4-openssl-dev";
 
     private readonly ILogger<BuildLibraryUtil> _logger;
     private readonly IDirectoryUtil _directoryUtil;
