@@ -82,9 +82,13 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         var versionTrimmed = latestVersion.TrimStart('v');
         var extractPath = Path.Combine(tempDir, $"git-{versionTrimmed}");
         _logger.LogInformation("Patching config.mak.sample...");
-        string sedExpr = "s/^BUILTIN_LIST = (.*)$/BUILTIN_LIST = $1 remote-https remote-ssh credential-manager http-backend/";
-        string patchCmd = $"cd {extractPath.Replace(':', '/')} && cp config.mak.sample config.mak && sed -i -E '{sedExpr}' config.mak";
-        await _processUtil.ShellRun($"{ReproEnv} {patchCmd}", tempDir, cancellationToken);
+        var patchCmd =
+            $"bash -lc \"SOURCE_DATE_EPOCH=1620000000 TZ=UTC LC_ALL=C " +
+            $"cd {extractPath.Replace(':', '/')} && " +
+            "cp config.mak.sample config.mak && " +
+            "sed -i -E 's/^BUILTIN_LIST = (.*)$/BUILTIN_LIST = \\\\1 remote-https remote-ssh credential-manager http-backend/' " +
+            "config.mak\"";
+        await _processUtil.ShellRun(patchCmd, tempDir, cancellationToken);
 
         // 7) generate configure script
         _logger.LogInformation("Generating configure script...");
