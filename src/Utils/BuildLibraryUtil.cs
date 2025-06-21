@@ -134,6 +134,8 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         if (exeFiles.Length == 0)
             throw new FileNotFoundException("git.exe not found in staging directory", stagingDir);
         string gitExe = exeFiles[0];
+
+        return gitExe;
     }
 
     public async ValueTask<string> GetLatestStableGitTag(CancellationToken cancellationToken = default)
