@@ -95,12 +95,21 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         await _processUtil.ShellRun($"{ReproEnv} cd {extractPath.Replace(':', '/')} && make configure", tempDir, cancellationToken);
 
         // 8) configure for Windows cross-compile
-        _logger.LogInformation("Configuring for Windows cross-compile...");
+        _logger.LogInformation("Configuring for Windows cross-compile…");
         string mxeBin = Path.Combine(mxeCache, "usr", "bin");
-        string configureCmd = $"export PATH={mxeBin}:$PATH && cd {extractPath.Replace(':', '/')} && " +
-                              "./configure --host=x86_64-w64-mingw32.static --prefix=/usr " +
-                              "CC=x86_64-w64-mingw32.static-gcc CFLAGS='-static -O2 -pipe' LDFLAGS='-static'";
-        await _processUtil.ShellRun($"{ReproEnv} {configureCmd}", tempDir, cancellationToken);
+
+        // Build a snippet that uses double-quotes for the flag values
+        snippet =
+            $"export PATH={mxeBin}:$PATH && " +
+            $"cd {gitDir} && " +
+            "./configure " +
+            "--host=x86_64-w64-mingw32.static " +
+            "--prefix=/usr " +
+            "CC=x86_64-w64-mingw32.static-gcc " +
+            "CFLAGS=\"-static -O2 -pipe\" " +
+            "LDFLAGS=\"-static\"";
+
+        await _processUtil.ShellRun(snippet, tempDir, cancellationToken);
 
         // 9) compile
         _logger.LogInformation("Building Git for Windows...");
