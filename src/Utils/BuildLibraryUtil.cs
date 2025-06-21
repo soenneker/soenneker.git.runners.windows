@@ -62,7 +62,11 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
 
         // 6) build MXE for static Win64 target
         _logger.LogInformation("Building MXE toolchain (static Win64)...");
-        var buildMxeCmd = $"cd mxe && make gcc libcurl openssl pcre zlib expat MXE_TARGETS='x86_64-w64-mingw32.static' -j{Environment.ProcessorCount}";
+        var buildMxeCmd =
+            "cd mxe && " +
+            "make gcc curl openssl pcre zlib expat " +
+            "MXE_TARGETS='x86_64-w64-mingw32.static' " +
+            $"-j{Environment.ProcessorCount}";
         await _processUtil.ShellRun(buildMxeCmd, tempDir, cancellationToken);
 
         // 7) extract Git source
