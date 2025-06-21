@@ -59,7 +59,7 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
             "tcl-dev tk-dev perl libperl-dev libreadline-dev " +
             "gettext autoconf automake intltool libtool libtool-bin " +
             "bison bzip2 flex gperf libgdk-pixbuf2.0-dev lzip " +
-            "openssl patch python3 python3-mako ruby sed unzip wget xz-utils p7zip-full";
+            "openssl patch python3 python3-mako ruby sed unzip wget xz-utils p7zip-full autopoint";
         await _processUtil.ShellRun(installScript, tempDir, cancellationToken);
 
         // 5) clone MXE cross-toolchain
