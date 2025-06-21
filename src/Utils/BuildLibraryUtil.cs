@@ -52,7 +52,7 @@ namespace Soenneker.Git.Runners.Windows.Utils
             // 4) install host-side build deps
             _logger.LogInformation("Installing build dependencies via apt-get...");
             string installDeps = "sudo apt-get update && " + "sudo apt-get install -y build-essential autoconf automake libtool pkg-config wget unzip git";
-            await _processUtil.BashRun("bash", $"-lc \"{installDeps}\"", tempDir, cancellationToken);
+            await _processUtil.BashRun("bash", $"-lc '{installDeps}'", tempDir, cancellationToken);
 
             // 5) clone MXE cross-toolchain
             _logger.LogInformation("Cloning MXE cross toolchain...");
