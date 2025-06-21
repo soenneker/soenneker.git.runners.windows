@@ -79,8 +79,7 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
             cancellationToken);
 
         // 6) patch config.mak
-        var versionTrimmed = latestVersion.TrimStart('v');
-        var extractPath = Path.Combine(tempDir, $"git-{versionTrimmed}");
+        var extractPath = Path.Combine(tempDir, $"git-{latestVersion}");
         _logger.LogInformation("Patching config.mak.sample to fold helpers into built-in git.exe...");
         string gitDir = extractPath.Replace(':', '/');
         string snippet =
