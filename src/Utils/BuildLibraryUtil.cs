@@ -99,17 +99,23 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         string mxeBin = Path.Combine(mxeCache, "usr", "bin");
 
         // Build a snippet that uses double-quotes for the flag values
-        snippet =
-            $"export PATH={mxeBin}:$PATH && " +
+        string configureArgs =
+            $"-lc \"export PATH={mxeBin}:$PATH && " +
             $"cd {gitDir} && " +
             "./configure " +
             "--host=x86_64-w64-mingw32.static " +
             "--prefix=/usr " +
             "CC=x86_64-w64-mingw32.static-gcc " +
-            "CFLAGS=\"-static -O2 -pipe\" " +
-            "LDFLAGS=\"-static\"";
+            "CFLAGS=\\\"-static -O2 -pipe\\\" " +
+            "LDFLAGS=\\\"-static\\\"\"";
 
-        await _processUtil.ShellRun(snippet, tempDir, cancellationToken);
+        // Directly call BashRun so you’re not wrapped in extra single-quotes
+        await _processUtil.BashRun(
+            cmd: "bash",
+            args: configureArgs,
+            workingDir: tempDir,
+            cancellationToken: cancellationToken
+        );
 
         // 9) compile
         _logger.LogInformation("Building Git for Windows...");
