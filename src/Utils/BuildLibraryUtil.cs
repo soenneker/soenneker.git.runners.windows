@@ -67,6 +67,8 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
             + "libperl-dev "
             + "libreadline-dev "
             + "gettext "            // provides autopoint
+            + "autoconf "           // for generating configure scripts
+            + "automake "           // provides aclocal, a dependency of intltool
             + "intltool "           // provides intltoolize
             + "gperf "
             + "libtool "
