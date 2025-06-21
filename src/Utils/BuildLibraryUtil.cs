@@ -131,9 +131,13 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         _logger.LogInformation("Renaming '{original}' to '{newName}'", originalGitPath, gitExe);
         File.Move(originalGitPath, gitExe);
 
+        _logger.LogInformation("--- DIAGNOSTIC: Verifying file type before stripping ---");
+        await _processUtil.ShellRun($"file {gitExe}", tempDir, cancellationToken);
+
         // 11) strip the installed exe
         _logger.LogInformation("Stripping git.exe at {path}", gitExe);
-        await _processUtil.ShellRun($"{ReproEnv} strip {gitExe}", tempDir, cancellationToken);
+        string crossStrip = Path.Combine(mxeBin, "x86_64-w64-mingw32.static-strip");
+        await _processUtil.ShellRun($"{ReproEnv} {crossStrip} {gitExe}", tempDir, cancellationToken);
 
         if (!File.Exists(gitExe))
             throw new FileNotFoundException("git.exe not found after install and strip", gitExe);
