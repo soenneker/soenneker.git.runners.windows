@@ -19,11 +19,10 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
 {
     private const string ReproEnv = "SOURCE_DATE_EPOCH=1620000000 TZ=UTC LC_ALL=C";
 
-    private const string InstallScript =
-        "sudo apt-get update && sudo apt-get install -y " +
-        "build-essential pkg-config ccache perl gettext autoconf automake intltool libtool libtool-bin " +
-        "bison bzip2 flex gperf lzip openssl patch python3 python3-mako ruby sed unzip wget xz-utils p7zip-full autopoint " +
-        "libcurl4-openssl-dev";
+    private const string InstallScript = "sudo apt-get update && sudo apt-get install -y " +
+                                         "build-essential pkg-config ccache perl gettext autoconf automake intltool libtool libtool-bin " +
+                                         "bison bzip2 flex gperf lzip openssl patch python3 python3-mako ruby sed unzip wget xz-utils p7zip-full autopoint " +
+                                         "libcurl4-openssl-dev";
 
     private readonly ILogger<BuildLibraryUtil> _logger;
     private readonly IDirectoryUtil _directoryUtil;
@@ -101,35 +100,28 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         string mxeBin = Path.Combine(mxeCache, "usr", "bin");
 
         // Build a snippet that uses double-quotes for the flag values
-        string configureArgs =
-            $"-lc \"export PATH={mxeBin}:$PATH && " +
-            $"cd {gitDir} && " +
-            "./configure " +
-            "--host=x86_64-w64-mingw32.static " +
-            "--prefix=/usr " +
-            "CC=x86_64-w64-mingw32.static-gcc " +
-            "CFLAGS=\\\"-static -O2 -pipe\\\" " +
-            "LDFLAGS=\\\"-static\\\"\"";
+        string configureArgs = $"-lc \"export PATH={mxeBin}:$PATH && " + $"cd {gitDir} && " + "./configure " + "--host=x86_64-w64-mingw32.static " +
+                               "--prefix=/usr " + "CC=x86_64-w64-mingw32.static-gcc " + "CFLAGS=\\\"-static -O2 -pipe\\\" " + "LDFLAGS=\\\"-static\\\"\"";
 
         // Directly call BashRun so you’re not wrapped in extra single-quotes
-        await _processUtil.BashRun(
-            cmd: "bash",
-            args: configureArgs,
-            workingDir: tempDir,
-            cancellationToken: cancellationToken
-        );
+        await _processUtil.BashRun(cmd: "bash", args: configureArgs, workingDir: tempDir, cancellationToken: cancellationToken);
 
         // 9) compile
         _logger.LogInformation("Building Git for Windows...");
         await _processUtil.ShellRun($"{ReproEnv} cd {extractPath.Replace(':', '/')} && make -j{Environment.ProcessorCount}", tempDir, cancellationToken);
 
-        // 10) strip binary
-        string gitExe = Path.Combine(extractPath, "git.exe");
-        _logger.LogInformation("Stripping git.exe...");
+        // 10) install into staging directory
+        _logger.LogInformation("Installing Git into staging dir…");
+        string stagingDir = Path.Combine(tempDir, "install");
+        await _processUtil.ShellRun($"{ReproEnv} cd {extractPath.Replace(':', '/')} && make install DESTDIR={stagingDir}", tempDir, cancellationToken);
+
+        // 11) strip the installed exe
+        string gitExe = Path.Combine(stagingDir, "usr", "bin", "git.exe");
+        _logger.LogInformation("Stripping git.exe at {path}", gitExe);
         await _processUtil.ShellRun($"{ReproEnv} strip {gitExe}", tempDir, cancellationToken);
 
         if (!File.Exists(gitExe))
-            throw new FileNotFoundException("git.exe not found after build", gitExe);
+            throw new FileNotFoundException("git.exe not found after install and strip", gitExe);
 
         _logger.LogInformation("Built static git.exe at {path}", gitExe);
         return gitExe;
