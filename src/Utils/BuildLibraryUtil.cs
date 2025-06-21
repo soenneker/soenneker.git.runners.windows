@@ -58,35 +58,36 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         // 4) prepare or reuse MXE cache
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         string mxeCache = Path.Combine(home, ".cache", "mxe");
-        if (!Directory.Exists(mxeCache))
-        {
-            _logger.LogInformation("Cloning MXE into cache at {path}", mxeCache);
-            await _processUtil.ShellRun($"{ReproEnv} git clone --depth 1 https://github.com/mxe/mxe.git {mxeCache}", tempDir, cancellationToken);
 
-            _logger.LogInformation("Building MXE toolchain (static Win64) in cache...");
-            string buildCacheCmd = $"cd {mxeCache} && export MXE_USE_CCACHE=1 && export CC=ccache\\ x86_64-w64-mingw32.static-gcc && " +
-                                   $"make -j{Environment.ProcessorCount} MXE_TARGETS=x86_64-w64-mingw32.static gcc curl openssl pcre zlib expat";
-            await _processUtil.BashRun(cmd: "bash", args: $"-lc \"{ReproEnv} {buildCacheCmd}\"", workingDir: tempDir, cancellationToken);
-        }
-        else
-        {
-            _logger.LogInformation("Reusing cached MXE at {path}", mxeCache);
-        }
+        _logger.LogInformation("Cloning MXE into cache at {path}", mxeCache);
+        await _processUtil.ShellRun($"{ReproEnv} git clone --depth 1 https://github.com/mxe/mxe.git {mxeCache}", tempDir, cancellationToken);
+
+        _logger.LogInformation("Building MXE toolchain (static Win64) in cache...");
+        string buildCacheCmd = $"cd {mxeCache} && export MXE_USE_CCACHE=1 && export CC=ccache\\ x86_64-w64-mingw32.static-gcc && " +
+                               $"make -j{Environment.ProcessorCount} MXE_TARGETS=x86_64-w64-mingw32.static gcc curl openssl pcre zlib expat";
+        await _processUtil.BashRun(cmd: "bash", args: $"-lc \"{ReproEnv} {buildCacheCmd}\"", workingDir: tempDir, cancellationToken);
+
 
         // 5) extract Git source
         _logger.LogInformation("Extracting Git source...");
         await _processUtil.ShellRun($"{ReproEnv} tar --sort=name --mtime=@1620000000 --owner=0 --group=0 --numeric-owner -xzf {archivePath}", tempDir,
             cancellationToken);
 
+        var candidates = Directory.GetDirectories(tempDir, "git-*");
+
+        if (candidates.Length != 1)
+            throw new Exception($"Expected exactly one git-<tag> folder in {tempDir}, found {candidates.Length}");
+
+        string extractPath = candidates[0];
+
+        _logger.LogInformation("Extracted Git source to {path}", extractPath);
+
         // 6) patch config.mak
-        var extractPath = Path.Combine(tempDir, $"git-{latestVersion}");
         _logger.LogInformation("Patching config.mak.sample to fold helpers into built-in git.exe...");
         string gitDir = extractPath.Replace(':', '/');
-        string snippet =
-            $"cd {gitDir} && " +
-            "cp config.mak.sample config.mak && " +
-            // wrap the sed script in '\'' … '\''
-            "sed -i -E '\\''s/^BUILTIN_LIST = (.*)$/BUILTIN_LIST = \\1 remote-https remote-ssh credential-manager http-backend/'\\'' config.mak";
+        string snippet = $"cd {gitDir} && " + "cp config.mak.sample config.mak && " +
+                         // wrap the sed script in '\'' … '\''
+                         "sed -i -E '\\''s/^BUILTIN_LIST = (.*)$/BUILTIN_LIST = \\1 remote-https remote-ssh credential-manager http-backend/'\\'' config.mak";
         await _processUtil.ShellRun(snippet, tempDir, cancellationToken);
 
         // 7) generate configure script
