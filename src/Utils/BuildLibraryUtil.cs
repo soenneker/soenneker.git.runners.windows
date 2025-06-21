@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -15,9 +14,15 @@ using Soenneker.Utils.Process.Abstract;
 
 namespace Soenneker.Git.Runners.Windows.Utils;
 
-///<inheritdoc cref="IBuildLibraryUtil"/>
+/// <inheritdoc cref="IBuildLibraryUtil"/>
 public sealed class BuildLibraryUtil : IBuildLibraryUtil
 {
+    private const string ReproEnv = "SOURCE_DATE_EPOCH=1620000000 TZ=UTC LC_ALL=C";
+
+    private const string InstallScript = "sudo apt-get update && sudo apt-get install -y build-essential pkg-config ccache " + "perl " +
+                                         "gettext autoconf automake intltool libtool libtool-bin bison bzip2 flex gperf lzip " +
+                                         "openssl patch python3 python3-mako ruby sed unzip wget xz-utils p7zip-full autopoint";
+
     private readonly ILogger<BuildLibraryUtil> _logger;
     private readonly IDirectoryUtil _directoryUtil;
     private readonly IHttpClientCache _httpClientCache;
@@ -43,19 +48,12 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         string latestVersion = await GetLatestStableGitTag(cancellationToken);
         _logger.LogInformation("Latest stable Git version: {version}", latestVersion);
 
-        // 3) download Git source & install deps in parallel
+        // 3) download Git source & install deps
         string archivePath = Path.Combine(tempDir, "git.tar.gz");
         string downloadUrl = $"https://github.com/git/git/archive/refs/tags/{latestVersion}.tar.gz";
         _logger.LogInformation("Downloading Git source from {url}", downloadUrl);
-
-        var installScript = "sudo apt-get update && " + "sudo apt-get install -y " + "build-essential musl-tools pkg-config ccache " +
-                            "libcurl4-openssl-dev libssl-dev libexpat1-dev zlib1g-dev " + "tcl-dev tk-dev perl libperl-dev libreadline-dev " +
-                            "gettext autoconf automake intltool libtool libtool-bin " + "bison bzip2 flex gperf libgdk-pixbuf2.0-dev lzip " +
-                            "openssl patch python3 python3-mako ruby sed unzip wget xz-utils p7zip-full autopoint";
-
-        await _processUtil.ShellRun(installScript, tempDir, cancellationToken);
+        await _processUtil.ShellRun(InstallScript, tempDir, cancellationToken);
         await _fileDownloadUtil.Download(downloadUrl, archivePath, cancellationToken: cancellationToken);
-
 
         // 4) prepare or reuse MXE cache
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -63,12 +61,12 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         if (!Directory.Exists(mxeCache))
         {
             _logger.LogInformation("Cloning MXE into cache at {path}", mxeCache);
-            await _processUtil.ShellRun($"git clone --depth 1 https://github.com/mxe/mxe.git {mxeCache}", tempDir, cancellationToken);
+            await _processUtil.ShellRun($"{ReproEnv} git clone --depth 1 https://github.com/mxe/mxe.git {mxeCache}", tempDir, cancellationToken);
 
             _logger.LogInformation("Building MXE toolchain (static Win64) in cache...");
-            string buildCacheCmd = $"cd {mxeCache} && " + "export MXE_USE_CCACHE=1 && " + "export CC=\"ccache x86_64-w64-mingw32.static-gcc\" && " +
-                                   $"make -j{Environment.ProcessorCount} MXE_TARGETS=\"x86_64-w64-mingw32.static\" gcc curl openssl pcre zlib expat";
-            await _processUtil.ShellRun(buildCacheCmd, tempDir, cancellationToken);
+            string buildCacheCmd = $"cd {mxeCache} && export MXE_USE_CCACHE=1 && export CC=ccache\\ x86_64-w64-mingw32.static-gcc && " +
+                                   $"make -j{Environment.ProcessorCount} MXE_TARGETS=x86_64-w64-mingw32.static gcc curl openssl pcre zlib expat";
+            await _processUtil.BashRun(cmd: "bash", args: $"-lc \"{ReproEnv} {buildCacheCmd}\"", workingDir: tempDir, cancellationToken);
         }
         else
         {
@@ -77,41 +75,37 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
 
         // 5) extract Git source
         _logger.LogInformation("Extracting Git source...");
-        string extractTarCmd = $"tar -xzf {archivePath}";
-        await _processUtil.ShellRun(extractTarCmd, tempDir, cancellationToken);
+        await _processUtil.ShellRun($"{ReproEnv} tar --sort=name --mtime=@1620000000 --owner=0 --group=0 --numeric-owner -xzf {archivePath}", tempDir,
+            cancellationToken);
 
+        // 6) patch config.mak
         var versionTrimmed = latestVersion.TrimStart('v');
         var extractPath = Path.Combine(tempDir, $"git-{versionTrimmed}");
-
-        // 6) patch config.mak to include helpers
         _logger.LogInformation("Patching config.mak.sample...");
-        string sedExpr = "\"s/^BUILTIN_LIST = (.*)$/BUILTIN_LIST = \\1 remote-https remote-ssh credential-manager http-backend/\"";
-        string patchCmd = $"cd {extractPath.Replace(':', '/')} && cp config.mak.sample config.mak && sed -i -E {sedExpr} config.mak";
-        await _processUtil.ShellRun(patchCmd, tempDir, cancellationToken);
+        string sedExpr = "s/^BUILTIN_LIST = (.*)$/BUILTIN_LIST = $1 remote-https remote-ssh credential-manager http-backend/";
+        string patchCmd = $"cd {extractPath.Replace(':', '/')} && cp config.mak.sample config.mak && sed -i -E '{sedExpr}' config.mak";
+        await _processUtil.ShellRun($"{ReproEnv} {patchCmd}", tempDir, cancellationToken);
 
         // 7) generate configure script
         _logger.LogInformation("Generating configure script...");
-        string genConfigureCmd = $"cd {extractPath.Replace(':', '/')} && make configure";
-        await _processUtil.ShellRun(genConfigureCmd, tempDir, cancellationToken);
+        await _processUtil.ShellRun($"{ReproEnv} cd {extractPath.Replace(':', '/')} && make configure", tempDir, cancellationToken);
 
-        // 8) configure for static Windows
+        // 8) configure for Windows cross-compile
         _logger.LogInformation("Configuring for Windows cross-compile...");
-        var mxeBin = Path.Combine(mxeCache, "usr", "bin");
+        string mxeBin = Path.Combine(mxeCache, "usr", "bin");
         string configureCmd = $"export PATH={mxeBin}:$PATH && cd {extractPath.Replace(':', '/')} && " +
                               "./configure --host=x86_64-w64-mingw32.static --prefix=/usr " +
                               "CC=x86_64-w64-mingw32.static-gcc CFLAGS='-static -O2 -pipe' LDFLAGS='-static'";
-        await _processUtil.ShellRun(configureCmd, tempDir, cancellationToken);
+        await _processUtil.ShellRun($"{ReproEnv} {configureCmd}", tempDir, cancellationToken);
 
         // 9) compile
         _logger.LogInformation("Building Git for Windows...");
-        string makeCmd = $"cd {extractPath.Replace(':', '/')} && make -j{Environment.ProcessorCount}";
-        await _processUtil.ShellRun(makeCmd, tempDir, cancellationToken);
+        await _processUtil.ShellRun($"{ReproEnv} cd {extractPath.Replace(':', '/')} && make -j{Environment.ProcessorCount}", tempDir, cancellationToken);
 
         // 10) strip binary
-        var gitExe = Path.Combine(extractPath, "git.exe");
+        string gitExe = Path.Combine(extractPath, "git.exe");
         _logger.LogInformation("Stripping git.exe...");
-        string stripCmd = $"strip {gitExe}";
-        await _processUtil.ShellRun(stripCmd, tempDir, cancellationToken);
+        await _processUtil.ShellRun($"{ReproEnv} strip {gitExe}", tempDir, cancellationToken);
 
         if (!File.Exists(gitExe))
             throw new FileNotFoundException("git.exe not found after build", gitExe);
@@ -129,7 +123,7 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
 
         foreach (var tag in tags!)
         {
-            var name = tag.GetProperty("name").GetString()!;
+            string name = tag.GetProperty("name").GetString()!;
             if (!name.Contains("-rc", StringComparison.OrdinalIgnoreCase) && !name.Contains("-beta", StringComparison.OrdinalIgnoreCase) &&
                 !name.Contains("-alpha", StringComparison.OrdinalIgnoreCase))
             {
@@ -137,6 +131,6 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
             }
         }
 
-        throw new Exception("No stable Git version found.");
+        throw new InvalidOperationException("No stable Git version found.");
     }
 }
