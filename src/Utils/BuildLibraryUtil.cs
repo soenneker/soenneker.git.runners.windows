@@ -74,11 +74,9 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
             _logger.LogInformation("MXE cache found at {path}, skipping clone.", mxeCache);
         }
 
-        // Set up the common prefix for the make commands
         string mxeEnv = $"cd {mxeCache} && export MXE_USE_CCACHE=1 && export CC=ccache\\ x86_64-w64-mingw32.static-gcc";
         string mxeMakeCommand = $"make -j{Environment.ProcessorCount} MXE_TARGETS=x86_64-w64-mingw32.static";
 
-        // Build the entire MXE toolchain and all required libraries in a single step.
         _logger.LogInformation("Building MXE toolchain and libraries (gcc, curl, openssl, etc.)...");
         string buildToolchainAndLibsCmd = $"{mxeEnv} && {mxeMakeCommand} binutils gcc curl openssl pcre zlib expat";
         await _processUtil.BashRun(buildToolchainAndLibsCmd, "", tempDir, cancellationToken);
@@ -117,21 +115,22 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         string libPath = Path.Combine(mxeTargetRoot, "lib");
 
         // START >> THE DEFINITIVE FIX
-        // We consolidate ALL compiler flags into CFLAGS. This prevents the `configure` script from ignoring
-        // the include paths (-I) and preprocessor defines (-D) which were previously in the CPPFLAGS
-        // environment variable. This is the most robust method.
+        // The root cause is the `socklen_t` configure test being incompatible with cross-compilation.
+        // The correct fix is to bypass this specific test by providing a cached answer: `ac_cv_type_socklen_t=yes`.
+        // We still provide the other flags to ensure the rest of the configure script and the final compile work correctly.
         string configureSnippet =
             $"cd {gitDir} && " +
             $"PATH=\"{mxeBin}:$PATH\" " +
             "ac_cv_iconv_omits_bom=no " +
             "ac_cv_fread_reads_directories=yes " +
             "ac_cv_snprintf_returns_bogus=no " +
+            "ac_cv_type_socklen_t=yes " + // <-- This is the definitive fix for the blocker.
             "./configure --host=x86_64-w64-mingw32.static " +
             "--prefix=/usr " +
-            $"CC=x86_64-w64-mingw32.static-gcc " +
-            $"CFLAGS=\"-static -O2 -pipe -I{includePath} -DNO_POSIX_SOCKETS\" " +
+            "CC=x86_64-w64-mingw32.static-gcc " +
+            "CFLAGS=\"-static -O2 -pipe -DNO_POSIX_SOCKETS\" " +
             $"LDFLAGS=\"-static -L{libPath}\" " +
-            $"LIBS=\"-lws2_32 -lpsapi -lcrypt32 -lsecur32\"";
+            $"LIBS=\"-lcurl -lssl -lcrypto -lz -lws2_32 -lpsapi -lcrypt32 -lsecur32\"";
         // END >> THE DEFINITIVE FIX
 
         await _processUtil.BashRun(configureSnippet, "", tempDir, cancellationToken);
