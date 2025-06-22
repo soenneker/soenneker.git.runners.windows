@@ -113,17 +113,23 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         _logger.LogInformation("Configuring for Windows cross-compile…");
 
         string mxeBin = Path.Combine(mxeCache, "usr", "bin");
+
+        // START >> MODIFICATION
+        // We add `-DNO_POSIX_SOCKETS` to CFLAGS to instruct the build system to use Windows sockets (winsock).
+        // This correctly resolves the `socklen_t` type definition.
+        // We can now remove the `ac_cv_type_socklen_t=int` cache variable as it's no longer needed and was the source of the issue.
         string configureSnippet =
             $"export PATH={mxeBin}:$PATH LIBS=\"-lws2_32\" && " +
-            $"cd {gitDir} && " +                       // ← add && here
+            $"cd {gitDir} && " +
             "ac_cv_iconv_omits_bom=no " +
             "ac_cv_fread_reads_directories=yes " +
             "ac_cv_snprintf_returns_bogus=no " +
-            "ac_cv_type_socklen_t=int " +
             "./configure --host=x86_64-w64-mingw32.static " +
             "--prefix=/usr " +
             "CC=x86_64-w64-mingw32.static-gcc " +
-            "CFLAGS=\"-static -O2 -pipe\" LDFLAGS=\"-static\"";
+            "CFLAGS=\"-static -O2 -pipe -DNO_POSIX_SOCKETS\" " + 
+            "LDFLAGS=\"-static\"";
+        // END >> MODIFICATION
 
         await _processUtil.BashRun(configureSnippet, "", tempDir, cancellationToken);
 
@@ -172,10 +178,14 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
 
         JsonElement[]? tags = await client.GetFromJsonAsync<JsonElement[]>("https://api.github.com/repos/git/git/tags", cancellationToken);
 
-        foreach (var tag in tags!)
+        if (tags == null)
+            throw new InvalidOperationException("Could not fetch tags from GitHub API.");
+
+        foreach (var tag in tags)
         {
-            string name = tag.GetProperty("name").GetString()!;
-            if (!name.Contains("-rc", StringComparison.OrdinalIgnoreCase) && !name.Contains("-beta", StringComparison.OrdinalIgnoreCase) &&
+            string? name = tag.GetProperty("name").GetString();
+
+            if (name != null && !name.Contains("-rc", StringComparison.OrdinalIgnoreCase) && !name.Contains("-beta", StringComparison.OrdinalIgnoreCase) &&
                 !name.Contains("-alpha", StringComparison.OrdinalIgnoreCase))
             {
                 return name;
