@@ -44,7 +44,7 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
     public async ValueTask<string> Build(CancellationToken cancellationToken)
     {
         // 1) prepare temp dir
-        string tempDir = _directoryUtil.CreateTempDirectory();
+        string tempDir = await _directoryUtil.CreateTempDirectory(cancellationToken);
 
         // 2) fetch latest Git tag
         string latestVersion = await GetLatestStableGitTag(cancellationToken);
@@ -98,7 +98,10 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         // 6) patch config.mak
         _logger.LogInformation("Patching config.mak.sample to fold helpers into built-in git.exe...");
         string gitDir = extractPath.Replace(':', '/');
-        string patchSnippet = $"cd {gitDir} && cp config.mak.dev config.mak && sed -i -E '\\''s/^BUILTIN_LIST = (.*)$/BUILTIN_LIST = \\1 remote-https remote-ssh credential-manager http-backend/'\\'' config.mak";
+
+        // FIX: Correctly quote the sed command for the shell.
+        string patchSnippet = $"cd {gitDir} && cp config.mak.dev config.mak && sed -i -E 's/^BUILTIN_LIST = (.*)$/BUILTIN_LIST = \\1 remote-https remote-ssh credential-manager http-backend/' config.mak";
+
         await _processUtil.BashRun(patchSnippet, "", tempDir, cancellationToken);
 
         // 7) generate configure script
