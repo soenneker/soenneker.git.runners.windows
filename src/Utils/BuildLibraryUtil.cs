@@ -64,10 +64,16 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         _logger.LogInformation("Cloning MXE into cache at {path}", mxeCache);
         await _processUtil.ShellRun($"{ReproEnv} git clone --depth 1 https://github.com/mxe/mxe.git {mxeCache}", tempDir, cancellationToken);
 
-        _logger.LogInformation("Building MXE toolchain (static Win64) in cache...");
-        string buildCacheCmd = $"cd {mxeCache} && export MXE_USE_CCACHE=1 && export CC=ccache\\ x86_64-w64-mingw32.static-gcc && " +
-                               $"make -j{Environment.ProcessorCount} MXE_TARGETS=x86_64-w64-mingw32.static binutils gcc curl openssl pcre zlib expat";
-        await _processUtil.BashRun(cmd: "bash", args: $"-lc \"{ReproEnv} {buildCacheCmd}\"", workingDir: tempDir, cancellationToken);
+        string mxeMakePrefix = $"cd {mxeCache} && export MXE_USE_CCACHE=1 && export CC=ccache\\ x86_64-w64-mingw32.static-gcc && make -j{Environment.ProcessorCount} MXE_TARGETS=x86_64-w64-mingw32.static";
+
+        _logger.LogInformation("Building MXE toolchain (Stage 1: binutils and gcc)...");
+        string buildToolchainCmd = $"{mxeMakePrefix} binutils gcc";
+        await _processUtil.BashRun(cmd: "bash", args: $"-lc \"{ReproEnv} {buildToolchainCmd}\"", workingDir: tempDir, cancellationToken);
+
+        _logger.LogInformation("Building MXE libraries (Stage 2: curl, openssl, etc.)...");
+        string buildLibsCmd = $"{mxeMakePrefix} curl openssl pcre zlib expat";
+        await _processUtil.BashRun(cmd: "bash", args: $"-lc \"{ReproEnv} {buildLibsCmd}\"", workingDir: tempDir, cancellationToken);
+
 
         // 5) extract Git source
         _logger.LogInformation("Extracting Git source...");
@@ -87,6 +93,7 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         _logger.LogInformation("Patching config.mak.sample to fold helpers into built-in git.exe...");
         string gitDir = extractPath.Replace(':', '/');
         string snippet = $"cd {gitDir} && " + "cp config.mak.dev config.mak && " +
+                         // wrap the sed script in '\'' … '\''
                          "sed -i -E '\\''s/^BUILTIN_LIST = (.*)$/BUILTIN_LIST = \\1 remote-https remote-ssh credential-manager http-backend/'\\'' config.mak";
         await _processUtil.ShellRun(snippet, tempDir, cancellationToken);
 
@@ -97,8 +104,12 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         // 8) configure for Windows cross-compile
         _logger.LogInformation("Configuring for Windows cross-compile…");
         string mxeBin = Path.Combine(mxeCache, "usr", "bin");
+
+        // Build a snippet that uses double-quotes for the flag values
         string configureArgs = $"-lc \"export PATH={mxeBin}:$PATH && " + $"cd {gitDir} && " + "./configure " + "--host=x86_64-w64-mingw32.static " +
                                "--prefix=/usr " + "CC=x86_64-w64-mingw32.static-gcc " + "CFLAGS=\\\"-static -O2 -pipe\\\" " + "LDFLAGS=\\\"-static\\\"\"";
+
+        // Directly call BashRun so you’re not wrapped in extra single-quotes
         await _processUtil.BashRun(cmd: "bash", args: configureArgs, workingDir: tempDir, cancellationToken: cancellationToken);
 
         // 9) compile
@@ -112,6 +123,7 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
 
         _logger.LogInformation("Locating the 'git' executable in the staging directory…");
         var foundFiles = Directory.GetFiles(stagingDir, "git", SearchOption.AllDirectories)
+            // Ensure we get the file in the 'bin' directory and not a script or another file named 'git'
             .Where(f => !new FileInfo(f).Attributes.HasFlag(FileAttributes.Directory) && Path.GetFileName(Path.GetDirectoryName(f)) == "bin")
             .ToArray();
 
@@ -124,11 +136,20 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         _logger.LogInformation("Renaming '{original}' to '{newName}'", originalGitPath, gitExe);
         File.Move(originalGitPath, gitExe);
 
+        _logger.LogInformation("--- DIAGNOSTIC: Verifying file type before stripping ---");
+        await _processUtil.ShellRun($"file {gitExe}", tempDir, cancellationToken);
+
+        _logger.LogInformation("--- DIAGNOSTIC: Checking for symbols BEFORE stripping ---");
+        string crossObjDump = Path.Combine(mxeBin, "x86_64-w64-mingw32.static-objdump");
+        await _processUtil.ShellRun($"{crossObjDump} -t {gitExe} | grep -c .", tempDir, cancellationToken);
+
         // 11) strip the installed exe
         _logger.LogInformation("Stripping git.exe at {path}", gitExe);
         string crossStrip = Path.Combine(mxeBin, "x86_64-w64-mingw32.static-strip");
         await _processUtil.ShellRun($"{ReproEnv} {crossStrip} {gitExe}", tempDir, cancellationToken);
 
+        _logger.LogInformation("--- DIAGNOSTIC: Checking for symbols AFTER stripping ---");
+        await _processUtil.ShellRun($"{crossObjDump} -t {gitExe} | grep -c .", tempDir, cancellationToken);
         if (!File.Exists(gitExe))
             throw new FileNotFoundException("git.exe not found after install and strip", gitExe);
 
