@@ -63,23 +63,25 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         string mxeCache = Path.Combine(home, ".cache", "mxe");
 
-        _logger.LogInformation("Cloning MXE into cache at {path}", mxeCache);
-        string cloneSnippet = $"{ReproEnv} git clone --depth 1 https://github.com/mxe/mxe.git {mxeCache}";
-        await _processUtil.BashRun(cloneSnippet, "", tempDir, cancellationToken);
+        if (!Directory.Exists(mxeCache))
+        {
+            _logger.LogInformation("Cloning MXE into cache at {path}", mxeCache);
+            string cloneSnippet = $"{ReproEnv} git clone --depth 1 https://github.com/mxe/mxe.git {mxeCache}";
+            await _processUtil.BashRun(cloneSnippet, "", tempDir, cancellationToken);
+        }
+        else
+        {
+            _logger.LogInformation("MXE cache found at {path}, skipping clone.", mxeCache);
+        }
 
         // Set up the common prefix for the make commands
         string mxeEnv = $"cd {mxeCache} && export MXE_USE_CCACHE=1 && export CC=ccache\\ x86_64-w64-mingw32.static-gcc";
         string mxeMakeCommand = $"make -j{Environment.ProcessorCount} MXE_TARGETS=x86_64-w64-mingw32.static";
 
-        // Stage 1: Build the core toolchain. This is one complete, awaited command.
-        _logger.LogInformation("Building MXE toolchain (Stage 1: binutils and gcc)...");
-        string buildToolchainCmd = $"{mxeEnv} && {mxeMakeCommand} binutils gcc";
-        await _processUtil.BashRun(buildToolchainCmd, "", tempDir, cancellationToken);
-
-        // Stage 2: Build the libraries. This command only runs after the first one is fully complete.
-        _logger.LogInformation("Building MXE libraries (Stage 2: curl, openssl, etc.)...");
-        string buildLibsCmd = $"{mxeEnv} && {mxeMakeCommand} curl openssl pcre zlib expat";
-        await _processUtil.BashRun(buildLibsCmd, "", tempDir, cancellationToken);
+        // Build the entire MXE toolchain and all required libraries in a single step.
+        _logger.LogInformation("Building MXE toolchain and libraries (gcc, curl, openssl, etc.)...");
+        string buildToolchainAndLibsCmd = $"{mxeEnv} && {mxeMakeCommand} binutils gcc curl openssl pcre zlib expat";
+        await _processUtil.BashRun(buildToolchainAndLibsCmd, "", tempDir, cancellationToken);
 
         // 5) extract Git source
         _logger.LogInformation("Extracting Git source...");
@@ -92,16 +94,13 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
             throw new Exception($"Expected exactly one git-<tag> folder in {tempDir}, found {candidates.Length}");
 
         string extractPath = candidates[0];
-
         _logger.LogInformation("Extracted Git source to {path}", extractPath);
 
         // 6) patch config.mak
         _logger.LogInformation("Patching config.mak.sample to fold helpers into built-in git.exe...");
         string gitDir = extractPath.Replace(':', '/');
 
-        // FIX: Correctly quote the sed command for the shell.
         string patchSnippet = $"cd {gitDir} && cp config.mak.dev config.mak && sed -i -E 's/^BUILTIN_LIST = (.*)$/BUILTIN_LIST = \\1 remote-https remote-ssh credential-manager http-backend/' config.mak";
-
         await _processUtil.BashRun(patchSnippet, "", tempDir, cancellationToken);
 
         // 7) generate configure script
@@ -113,23 +112,24 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         _logger.LogInformation("Configuring for Windows cross-compile…");
 
         string mxeBin = Path.Combine(mxeCache, "usr", "bin");
+        string mxeTargetRoot = Path.Combine(mxeCache, "usr", "x86_64-w64-mingw32.static");
+        string includePath = Path.Combine(mxeTargetRoot, "include");
+        string libPath = Path.Combine(mxeTargetRoot, "lib");
 
-        // START >> MODIFICATION
-        // We add `-DNO_POSIX_SOCKETS` to CFLAGS to instruct the build system to use Windows sockets (winsock).
-        // This correctly resolves the `socklen_t` type definition.
-        // We can now remove the `ac_cv_type_socklen_t=int` cache variable as it's no longer needed and was the source of the issue.
+        // THIS IS THE CRITICAL FIX: Use standard autoconf variables to provide a complete build environment.
         string configureSnippet =
-            $"export PATH={mxeBin}:$PATH LIBS=\"-lws2_32\" && " +
-            $"cd {gitDir} && " +
+            $"export PATH=\"{mxeBin}:$PATH\" " +
+            $"export CPPFLAGS=\"-I{includePath} -DNO_POSIX_SOCKETS\" " +
+            $"export LDFLAGS=\"-L{libPath} -static\" " +
+            $"export LIBS=\"-lws2_32 -lpsapi -lcrypt32 -lsecur32\" " + // Added more win32 libs git might need
+            $"&& cd {gitDir} && " +
             "ac_cv_iconv_omits_bom=no " +
             "ac_cv_fread_reads_directories=yes " +
             "ac_cv_snprintf_returns_bogus=no " +
             "./configure --host=x86_64-w64-mingw32.static " +
             "--prefix=/usr " +
             "CC=x86_64-w64-mingw32.static-gcc " +
-            "CFLAGS=\"-static -O2 -pipe -DNO_POSIX_SOCKETS\" " + 
-            "LDFLAGS=\"-static\"";
-        // END >> MODIFICATION
+            "CFLAGS=\"-static -O2 -pipe\"";
 
         await _processUtil.BashRun(configureSnippet, "", tempDir, cancellationToken);
 
