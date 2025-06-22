@@ -116,13 +116,16 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         string includePath = Path.Combine(mxeTargetRoot, "include");
         string libPath = Path.Combine(mxeTargetRoot, "lib");
 
-        // THIS IS THE CRITICAL FIX: Use standard autoconf variables to provide a complete build environment.
+        // START >> CRITICAL FIX
+        // The previous version had a shell syntax error, repeating `export` without a separator.
+        // This version uses the standard `cd ... && VAR=val ... command` pattern, which is correct.
+        // All environment variables are now correctly passed to the ./configure script.
         string configureSnippet =
-            $"export PATH=\"{mxeBin}:$PATH\" " +
-            $"export CPPFLAGS=\"-I{includePath} -DNO_POSIX_SOCKETS\" " +
-            $"export LDFLAGS=\"-L{libPath} -static\" " +
-            $"export LIBS=\"-lws2_32 -lpsapi -lcrypt32 -lsecur32\" " + // Added more win32 libs git might need
-            $"&& cd {gitDir} && " +
+            $"cd {gitDir} && " + // First, change into the correct directory
+            $"PATH=\"{mxeBin}:$PATH\" " + // Then, set all environment variables for the command that follows
+            $"CPPFLAGS=\"-I{includePath} -DNO_POSIX_SOCKETS\" " +
+            $"LDFLAGS=\"-L{libPath} -static\" " +
+            $"LIBS=\"-lws2_32 -lpsapi -lcrypt32 -lsecur32\" " +
             "ac_cv_iconv_omits_bom=no " +
             "ac_cv_fread_reads_directories=yes " +
             "ac_cv_snprintf_returns_bogus=no " +
@@ -130,6 +133,7 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
             "--prefix=/usr " +
             "CC=x86_64-w64-mingw32.static-gcc " +
             "CFLAGS=\"-static -O2 -pipe\"";
+        // END >> CRITICAL FIX
 
         await _processUtil.BashRun(configureSnippet, "", tempDir, cancellationToken);
 
