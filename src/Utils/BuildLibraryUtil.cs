@@ -114,13 +114,11 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
 
         string mxeBin = Path.Combine(mxeCache, "usr", "bin");
         string configureSnippet =
-            $"export PATH={mxeBin}:$PATH && cd {gitDir} " +
-            // ────────────────────────────────────────────────
-            "ac_cv_iconv_omits_bom=no " +              // ← correct cache var
-            // (optional but saves two more runtime checks)
+            $"export PATH={mxeBin}:$PATH && " +
+            $"cd {gitDir} && " +                       // ← add && here
+            "ac_cv_iconv_omits_bom=no " +
             "ac_cv_fread_reads_directories=yes " +
             "ac_cv_snprintf_returns_bogus=no " +
-            // ────────────────────────────────────────────────
             "./configure --host=x86_64-w64-mingw32.static " +
             "--prefix=/usr " +
             "CC=x86_64-w64-mingw32.static-gcc " +
