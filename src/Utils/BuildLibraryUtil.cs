@@ -112,7 +112,7 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         // 8) configure for Windows cross-compile
         _logger.LogInformation("Configuring for Windows cross-compile…");
         string mxeBin = Path.Combine(mxeCache, "usr", "bin");
-        string configureSnippet = $"export PATH={mxeBin}:$PATH && cd {gitDir} && ./configure --host=x86_64-w64-mingw32.static --prefix=/usr CC=x86_64-w64-mingw32.static-gcc CFLAGS=\"-static -O2 -pipe\" LDFLAGS=\"-static\"";
+        string configureSnippet = $"export PATH={mxeBin}:$PATH && cd {gitDir} && ac_cv_func_iconv_omits_bom=no ./configure --host=x86_64-w64-mingw32.static --prefix=/usr CC=x86_64-w64-mingw32.static-gcc CFLAGS=\"-static -O2 -pipe\" LDFLAGS=\"-static\"";
         await _processUtil.BashRun(configureSnippet, "", tempDir, cancellationToken);
 
         // 9) compile
