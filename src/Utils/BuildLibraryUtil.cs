@@ -116,24 +116,23 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         string includePath = Path.Combine(mxeTargetRoot, "include");
         string libPath = Path.Combine(mxeTargetRoot, "lib");
 
-        // START >> CRITICAL FIX
-        // The previous version had a shell syntax error, repeating `export` without a separator.
-        // This version uses the standard `cd ... && VAR=val ... command` pattern, which is correct.
-        // All environment variables are now correctly passed to the ./configure script.
+        // START >> THE DEFINITIVE FIX
+        // We consolidate ALL compiler flags into CFLAGS. This prevents the `configure` script from ignoring
+        // the include paths (-I) and preprocessor defines (-D) which were previously in the CPPFLAGS
+        // environment variable. This is the most robust method.
         string configureSnippet =
-            $"cd {gitDir} && " + // First, change into the correct directory
-            $"PATH=\"{mxeBin}:$PATH\" " + // Then, set all environment variables for the command that follows
-            $"CPPFLAGS=\"-I{includePath} -DNO_POSIX_SOCKETS\" " +
-            $"LDFLAGS=\"-L{libPath} -static\" " +
-            $"LIBS=\"-lws2_32 -lpsapi -lcrypt32 -lsecur32\" " +
+            $"cd {gitDir} && " +
+            $"PATH=\"{mxeBin}:$PATH\" " +
             "ac_cv_iconv_omits_bom=no " +
             "ac_cv_fread_reads_directories=yes " +
             "ac_cv_snprintf_returns_bogus=no " +
             "./configure --host=x86_64-w64-mingw32.static " +
             "--prefix=/usr " +
-            "CC=x86_64-w64-mingw32.static-gcc " +
-            "CFLAGS=\"-static -O2 -pipe\"";
-        // END >> CRITICAL FIX
+            $"CC=x86_64-w64-mingw32.static-gcc " +
+            $"CFLAGS=\"-static -O2 -pipe -I{includePath} -DNO_POSIX_SOCKETS\" " +
+            $"LDFLAGS=\"-static -L{libPath}\" " +
+            $"LIBS=\"-lws2_32 -lpsapi -lcrypt32 -lsecur32\"";
+        // END >> THE DEFINITIVE FIX
 
         await _processUtil.BashRun(configureSnippet, "", tempDir, cancellationToken);
 
