@@ -119,11 +119,15 @@ namespace Soenneker.Git.Runners.Windows.Utils
             _logger.LogInformation("Configuring & building Git from source...");
             string buildCmd =
                 $@"export MSYSTEM=MINGW64; " +
+                "export PKG_CONFIG='pkg-config --static'; " +
+                "export CFLAGS='-O2 -pipe -static -static-libgcc -static-libstdc++'; " +
+                "export LDFLAGS='-static -static-libgcc -static-libstdc++ -s'; " +
                 "export PATH=/mingw64/bin:/usr/bin:$PATH; " +
                 $"cd {gitSrcMsys}; " +
                 "make configure; " +
                 "./configure --prefix=/mingw64 --with-openssl --with-curl; " +
-                $"make -j{Environment.ProcessorCount}; " +
+                $"make -j{Environment.ProcessorCount} " +
+                "NO_TCLTK=YesPlease NO_GETTEXT=YesPlease USE_LIBPCRE2=Yes; " +
                 $"make install DESTDIR={distMsys}";
             await _processUtil.CmdRun($@"bash -lc ""{buildCmd}""", tempDir, cancellationToken);
 
