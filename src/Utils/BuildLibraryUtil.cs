@@ -128,8 +128,11 @@ EXTLIBS += -lws2_32 -lcrypt32 -lbcrypt -lz -lshlwapi";
 
             // 9) configure → make → install
             _logger.LogInformation("Configuring & building Git from source...");
+            _logger.LogInformation("Configuring & building Git from source...");
             string buildCmd =
                 "export MSYSTEM=MINGW64 && " +
+                // Add the MinGW and MSYS binary directories to the start of the PATH
+                "export PATH=/mingw64/bin:/usr/bin:$PATH && " +
                 "export PKG_CONFIG='pkg-config --static' && " +
                 "export LIBRARY_PATH=/mingw64/lib:$LIBRARY_PATH && " +
                 "export CFLAGS='-O2 -pipe -static -static-libgcc -static-libstdc++ -DCURL_STATICLIB' && " +
@@ -137,7 +140,8 @@ EXTLIBS += -lws2_32 -lcrypt32 -lbcrypt -lz -lshlwapi";
                 "set -euo pipefail && " +
                 $"cd {gitSrcMsys} && " +
                 "make configure && " +
-                "./configure --prefix=/mingw64 --with-openssl --with-curl --with-pcre2 && " +
+                // Removed the redundant --with-pcre2 flag
+                "./configure --prefix=/mingw64 --with-openssl --with-curl && " +
                 $"make -j{Environment.ProcessorCount} V=1 && " +
                 $"make install DESTDIR={distMsys}";
 
