@@ -17,18 +17,15 @@ namespace Soenneker.Git.Runners.Windows.Utils
     /// <inheritdoc cref="IBuildLibraryUtil"/>
     public sealed class BuildLibraryUtil : IBuildLibraryUtil
     {
-        // MSYS2 install & update steps
         private const string InstallMsys2 = "choco install -y msys2";
         private const string PacmanSync = @"bash -lc ""pacman -Sy --noconfirm""";
         private const string PacmanUpgrade = @"bash -lc ""MSYS2_ARG_CONV_EXCL='*' pacman -Su --noconfirm""";
         private const string PacmanDependencies =
             @"bash -lc ""pacman -Sy --noconfirm --needed " +
-             "mingw-w64-x86_64-gcc mingw-w64-x86_64-make mingw-w64-x86_64-autoconf " +
-             "mingw-w64-x86_64-automake mingw-w64-x86_64-libtool mingw-w64-x86_64-pkgconf " +
+             "base-devel xz bzip2 " +
+             "mingw-w64-x86_64-gcc mingw-w64-x86_64-make mingw-w64-x86_64-pkgconf " +
              "mingw-w64-x86_64-curl mingw-w64-x86_64-libiconv mingw-w64-x86_64-expat " +
-             "mingw-w64-x86_64-openssl mingw-w64-x86_64-zlib mingw-w64-x86_64-bzip2 " +
-             "mingw-w64-x86_64-xz mingw-w64-x86_64-patch mingw-w64-x86_64-perl " +
-             "mingw-w64-x86_64-python3 mingw-w64-x86_64-ruby\"";
+             "mingw-w64-x86_64-openssl mingw-w64-x86_64-zlib\"";
 
         private readonly ILogger<BuildLibraryUtil> _logger;
         private readonly IDirectoryUtil _directoryUtil;
@@ -55,123 +52,70 @@ namespace Soenneker.Git.Runners.Windows.Utils
             // 1) prepare temp dir
             string tempDir = await _directoryUtil.CreateTempDirectory(cancellationToken);
 
-            // 2) install MSYS2 if needed
+            // 2) ensure MSYS2 installed
             var msysBin = @"C:\msys64\usr\bin";
-            var bashExe = Path.Combine(msysBin, "bash.exe");
-            if (!File.Exists(bashExe))
+            if (!File.Exists(Path.Combine(msysBin, "bash.exe")))
             {
-                try
-                {
-                    _logger.LogInformation("Installing MSYS2 via Chocolatey...");
-                    await _processUtil.CmdRun(InstallMsys2, tempDir, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "MSYS2 installation failed");
-                    throw new InvalidOperationException("Failed to install MSYS2", ex);
-                }
+                _logger.LogInformation("Installing MSYS2 via Chocolatey...");
+                await _processUtil.CmdRun(InstallMsys2, tempDir, cancellationToken);
             }
 
-            // 3) ensure msys2 bin on PATH for child processes
-            var currentPath = Environment.GetEnvironmentVariable("PATH")!;
-            if (!currentPath.Split(';', StringSplitOptions.RemoveEmptyEntries)
-                            .Contains(msysBin, StringComparer.OrdinalIgnoreCase))
-            {
-                Environment.SetEnvironmentVariable("PATH", $"{msysBin};{currentPath}");
-            }
+            // 3) add MSYS2 to PATH for our child processes
+            var path = Environment.GetEnvironmentVariable("PATH")!;
+            if (!path.Split(';').Contains(msysBin, StringComparer.OrdinalIgnoreCase))
+                Environment.SetEnvironmentVariable("PATH", $"{msysBin};{path}");
 
             // 4a) sync pacman DB
-            try
-            {
-                _logger.LogInformation("Synchronizing pacman database...");
-                await _processUtil.CmdRun(PacmanSync, tempDir, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "pacman -Sy failed");
-                throw new InvalidOperationException("Failed to sync pacman database", ex);
-            }
+            _logger.LogInformation("Synchronizing pacman database...");
+            await _processUtil.CmdRun(PacmanSync, tempDir, cancellationToken);
 
             // 4b) upgrade core system
-            try
-            {
-                _logger.LogInformation("Upgrading MSYS2 core system...");
-                await _processUtil.CmdRun(PacmanUpgrade, tempDir, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "pacman -Su failed");
-                throw new InvalidOperationException("Failed to upgrade MSYS2 core", ex);
-            }
+            _logger.LogInformation("Upgrading MSYS2 core system...");
+            await _processUtil.CmdRun(PacmanUpgrade, tempDir, cancellationToken);
 
-            // 4c) install MinGW dependencies
-            try
-            {
-                _logger.LogInformation("Installing build dependencies via pacman...");
-                await _processUtil.CmdRun(PacmanDependencies, tempDir, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "pacman dependency installation failed");
-                throw new InvalidOperationException("Failed to install build dependencies", ex);
-            }
+            // 4c) install deps (msys base-devel + mingw libs)
+            _logger.LogInformation("Installing build dependencies via pacman...");
+            await _processUtil.CmdRun(PacmanDependencies, tempDir, cancellationToken);
 
             // 5) fetch latest Git tag
             string latestVersion = await GetLatestStableGitTag(cancellationToken);
             _logger.LogInformation("Latest stable Git version: {version}", latestVersion);
 
-            // 6) download & validate source archive
+            // 6) download + validate
             string archivePath = Path.Combine(tempDir, "git.tar.gz");
             string downloadUrl = $"https://github.com/git/git/archive/refs/tags/{latestVersion}.tar.gz";
             _logger.LogInformation("Downloading Git source from {url}", downloadUrl);
             await DownloadWithRetry(downloadUrl, archivePath, cancellationToken);
             ValidateGzip(archivePath);
 
-            // 7) extract & build under MSYS2
+            // 7) extract + build under MSYS2
             string msysTemp = ToMsysPath(tempDir);
             string msysArchive = ToMsysPath(archivePath);
-            try
-            {
-                _logger.LogInformation("Extracting Git source...");
-                await _processUtil.CmdRun(
-                    $@"bash -lc ""tar -xzf {msysArchive} -C {msysTemp}""",
-                    tempDir, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to extract Git source");
-                throw;
-            }
+            _logger.LogInformation("Extracting Git source...");
+            await _processUtil.CmdRun(
+                $@"bash -lc ""tar -xzf {msysArchive} -C {msysTemp}""",
+                tempDir, cancellationToken);
 
             string gitSrcWin = Path.Combine(tempDir, $"git-{latestVersion.TrimStart('v')}");
             string gitSrcMsys = ToMsysPath(gitSrcWin);
 
-            // prepare clean staging dir
-            string distRoot = Path.Combine(tempDir, "dist");
+            // clean + create staging dist
+            var distRoot = Path.Combine(tempDir, "dist");
             if (Directory.Exists(distRoot))
                 Directory.Delete(distRoot, recursive: true);
             Directory.CreateDirectory(distRoot);
             string distMsys = ToMsysPath(distRoot);
 
-            // configure & make
+            _logger.LogInformation("Configuring & building Git...");
             var buildScript = $@"
 cd {gitSrcMsys}
 make configure
 ./configure --prefix=/mingw64 --with-openssl --with-curl
 make -j{Environment.ProcessorCount}
 make install DESTDIR={distMsys}";
-            try
-            {
-                _logger.LogInformation("Configuring & building Git...");
-                await _processUtil.CmdRun(
-                    $@"bash -lc ""{buildScript}""",
-                    tempDir, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Git build failed");
-                throw;
-            }
+            await _processUtil.CmdRun(
+                $@"bash -lc ""{buildScript}""",
+                tempDir, cancellationToken);
 
             // 8) locate git.exe
             string distBin = Path.Combine(distRoot, "mingw64", "bin");
@@ -204,12 +148,14 @@ make install DESTDIR={distMsys}";
                 {
                     _logger.LogWarning(
                         ex,
-                        "Download failed (attempt {Attempt}/{Max}). Retrying in {Delay}s...",
+                        "Download failed (attempt {Attempt}/{Max}). Retrying in {Delay}s…",
                         attempt, maxAttempts, delay.TotalSeconds);
                     await Task.Delay(delay, cancellationToken);
                     delay *= 2;
                 }
             }
+
+            throw new InvalidOperationException($"Failed to download after {maxAttempts} attempts: {url}");
         }
 
         private static void ValidateGzip(string path)
