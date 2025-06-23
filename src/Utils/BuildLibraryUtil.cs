@@ -70,7 +70,7 @@ namespace Soenneker.Git.Runners.Windows.Utils
                 await _processUtil.CmdRun(InstallMsys2, tempDir, cancellationToken);
             }
 
-            // 3) ensure both usr/bin and mingw64/bin are on PATH for our child processes
+            // 3) ensure both usr/bin and mingw64/bin are on PATH
             var path = Environment.GetEnvironmentVariable("PATH")!;
             var parts = path.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList();
             if (!parts.Contains(MsysBin, StringComparer.OrdinalIgnoreCase)) parts.Insert(0, MsysBin);
@@ -115,6 +115,17 @@ namespace Soenneker.Git.Runners.Windows.Utils
             Directory.CreateDirectory(distRoot);
             string distMsys = ToMsysPath(distRoot);
 
+            // ————— NEW STEP: write config.mak from .NET —————
+            _logger.LogInformation("Writing config.mak...");
+            var configPath = Path.Combine(gitSrcWin, "config.mak");
+            var configContents = @"NO_TCLTK=YesPlease
+NO_GETTEXT=YesPlease
+USE_LIBPCRE2=Yes
+CFLAGS  += -O2 -pipe -static -static-libgcc -static-libstdc++ -DCURL_STATICLIB
+LDFLAGS += -static -static-libgcc -static-libstdc++ -s
+EXTLIBS += -lws2_32 -lcrypt32 -lbcrypt -lz -lshlwapi";
+            await File.WriteAllTextAsync(configPath, configContents, cancellationToken);
+
             // 9) configure → make → install
             _logger.LogInformation("Configuring & building Git from source...");
             string buildCmd =
@@ -123,22 +134,13 @@ namespace Soenneker.Git.Runners.Windows.Utils
                 "export LIBRARY_PATH=/mingw64/lib:$LIBRARY_PATH && " +
                 "export CFLAGS='-O2 -pipe -static -static-libgcc -static-libstdc++ -DCURL_STATICLIB' && " +
                 "export LDFLAGS='-static -static-libgcc -static-libstdc++ -s' && " +
-                "set -euo pipefail && " +                       //  ← new
+                "set -euo pipefail && " +
                 $"cd {gitSrcMsys} && " +
-                // ---------- config.mak ----------
-                "cat >config.mak <<'EOF'\n" +
-                "NO_TCLTK=YesPlease\n" +
-                "NO_GETTEXT=YesPlease\n" +
-                "USE_LIBPCRE2=Yes\n" +
-                "CFLAGS  += -O2 -pipe -static -static-libgcc -static-libstdc++ -DCURL_STATICLIB\n" +
-                "LDFLAGS += -static -static-libgcc -static-libstdc++ -s\n" +
-                "EXTLIBS += -lws2_32 -lcrypt32 -lbcrypt -lz -lshlwapi\n" +
-                "EOF\n" +
-                // ---------- build ----------
                 "make configure && " +
                 "./configure --prefix=/mingw64 --with-openssl --with-curl --with-pcre2 && " +
                 $"make -j{Environment.ProcessorCount} V=1 && " +
                 $"make install DESTDIR={distMsys}";
+
             await _processUtil.CmdRun($@"bash -lc ""{buildCmd}""", tempDir, cancellationToken);
 
             // 10) grab the result
