@@ -111,39 +111,39 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
 
         string mxeBin = Path.Combine(mxeCache, "usr", "bin");
         string mxeTargetRoot = Path.Combine(mxeCache, "usr", "x86_64-w64-mingw32.static");
-        string includePath = Path.Combine(mxeTargetRoot, "include");
         string libPath = Path.Combine(mxeTargetRoot, "lib");
 
-        // START >> THE DEFINITIVE FIX
-        // The root cause is the `socklen_t` configure test being incompatible with cross-compilation.
-        // The correct fix is to bypass this specific test by providing a cached answer: `ac_cv_type_socklen_t=yes`.
-        // We still provide the other flags to ensure the rest of the configure script and the final compile work correctly.
         string configureSnippet =
             $"cd {gitDir} && " +
             $"PATH=\"{mxeBin}:$PATH\" " +
             "ac_cv_iconv_omits_bom=no " +
             "ac_cv_fread_reads_directories=yes " +
             "ac_cv_snprintf_returns_bogus=no " +
-            "ac_cv_type_socklen_t=yes " + // <-- This is the definitive fix for the blocker.
+            "ac_cv_type_socklen_t=yes " +
             "./configure --host=x86_64-w64-mingw32.static " +
             "--prefix=/usr " +
             "CC=x86_64-w64-mingw32.static-gcc " +
             "CFLAGS=\"-static -O2 -pipe -DNO_POSIX_SOCKETS\" " +
             $"LDFLAGS=\"-static -L{libPath}\" " +
             $"LIBS=\"-lcurl -lssl -lcrypto -lz -lws2_32 -lpsapi -lcrypt32 -lsecur32\"";
-        // END >> THE DEFINITIVE FIX
 
         await _processUtil.BashRun(configureSnippet, "", tempDir, cancellationToken);
 
         // 9) compile
         _logger.LogInformation("Building Git for Windows...");
-        string compileSnippet = $"{ReproEnv} cd {gitDir} && make -j{Environment.ProcessorCount}";
+        // START >> FIX
+        // We must provide the PATH to the MXE binaries for the 'make' command as well.
+        string compileSnippet = $"{ReproEnv} cd {gitDir} && PATH=\"{mxeBin}:$PATH\" make -j{Environment.ProcessorCount}";
+        // END >> FIX
         await _processUtil.BashRun(compileSnippet, "", tempDir, cancellationToken);
 
         // 10) install into staging directory
         _logger.LogInformation("Installing Git into staging dir…");
         string stagingDir = Path.Combine(tempDir, "install");
-        string installSnippet = $"{ReproEnv} cd {gitDir} && make install DESTDIR={stagingDir}";
+        // START >> FIX
+        // Also provide the PATH for the 'make install' command.
+        string installSnippet = $"{ReproEnv} cd {gitDir} && PATH=\"{mxeBin}:$PATH\" make install DESTDIR={stagingDir}";
+        // END >> FIX
         await _processUtil.BashRun(installSnippet, "", tempDir, cancellationToken);
 
         _logger.LogInformation("Locating the 'git' executable in the staging directory…");
