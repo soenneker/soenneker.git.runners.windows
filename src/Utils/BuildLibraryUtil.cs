@@ -17,15 +17,23 @@ namespace Soenneker.Git.Runners.Windows.Utils
     /// <inheritdoc cref="IBuildLibraryUtil"/>
     public sealed class BuildLibraryUtil : IBuildLibraryUtil
     {
+        // MSYS2 root & bins
+        private const string MsysRoot = @"C:\msys64";
+        private static readonly string MsysBin = Path.Combine(MsysRoot, "usr", "bin");
+        private static readonly string MingwBin = Path.Combine(MsysRoot, "mingw64", "bin");
+
         private const string InstallMsys2 = "choco install -y msys2";
-        private const string PacmanSync = @"bash -lc ""pacman -Sy --noconfirm""";
-        private const string PacmanUpgrade = @"bash -lc ""MSYS2_ARG_CONV_EXCL='*' pacman -Su --noconfirm""";
+
+        // Run under MINGW64 shell so pacman and build tools target mingw64
+        private const string PacmanSync =
+            @"bash -lc ""export MSYSTEM=MINGW64; pacman -Sy --noconfirm""";
+        private const string PacmanUpgrade =
+            @"bash -lc ""export MSYSTEM=MINGW64; MSYS2_ARG_CONV_EXCL='*' pacman -Su --noconfirm""";
         private const string PacmanDependencies =
-            @"bash -lc ""pacman -Sy --noconfirm --needed " +
-             "base-devel xz bzip2 " +
-             "mingw-w64-x86_64-gcc mingw-w64-x86_64-make mingw-w64-x86_64-pkgconf " +
-             "mingw-w64-x86_64-curl mingw-w64-x86_64-libiconv mingw-w64-x86_64-expat " +
-             "mingw-w64-x86_64-openssl mingw-w64-x86_64-zlib\"";
+            @"bash -lc ""export MSYSTEM=MINGW64; pacman -Sy --noconfirm --needed " +
+            "mingw-w64-x86_64-toolchain base-devel mingw-w64-x86_64-curl " +
+            "mingw-w64-x86_64-libiconv mingw-w64-x86_64-expat " +
+            "mingw-w64-x86_64-openssl mingw-w64-x86_64-zlib\"";
 
         private readonly ILogger<BuildLibraryUtil> _logger;
         private readonly IDirectoryUtil _directoryUtil;
@@ -49,129 +57,127 @@ namespace Soenneker.Git.Runners.Windows.Utils
 
         public async ValueTask<string> Build(CancellationToken cancellationToken)
         {
-            // 1) prepare temp dir
+            // 1) make a clean temp dir
             string tempDir = await _directoryUtil.CreateTempDirectory(cancellationToken);
 
-            // 2) ensure MSYS2 installed
-            var msysBin = @"C:\msys64\usr\bin";
-            if (!File.Exists(Path.Combine(msysBin, "bash.exe")))
+            // 2) install msys2 if missing
+            if (!File.Exists(Path.Combine(MsysBin, "bash.exe")))
             {
                 _logger.LogInformation("Installing MSYS2 via Chocolatey...");
                 await _processUtil.CmdRun(InstallMsys2, tempDir, cancellationToken);
             }
 
-            // 3) add MSYS2 to PATH for our child processes
+            // 3) ensure both usr/bin and mingw64/bin are on PATH for our child processes
             var path = Environment.GetEnvironmentVariable("PATH")!;
-            if (!path.Split(';').Contains(msysBin, StringComparer.OrdinalIgnoreCase))
-                Environment.SetEnvironmentVariable("PATH", $"{msysBin};{path}");
+            var parts = path.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList();
+            if (!parts.Contains(MsysBin, StringComparer.OrdinalIgnoreCase)) parts.Insert(0, MsysBin);
+            if (!parts.Contains(MingwBin, StringComparer.OrdinalIgnoreCase)) parts.Insert(0, MingwBin);
+            Environment.SetEnvironmentVariable("PATH", string.Join(';', parts));
 
-            // 4a) sync pacman DB
+            // 4) bootstrap MSYS2: sync DB, upgrade, then install build deps
             _logger.LogInformation("Synchronizing pacman database...");
             await _processUtil.CmdRun(PacmanSync, tempDir, cancellationToken);
 
-            // 4b) upgrade core system
-            _logger.LogInformation("Upgrading MSYS2 core system...");
+            _logger.LogInformation("Upgrading MSYS2 core packages...");
             await _processUtil.CmdRun(PacmanUpgrade, tempDir, cancellationToken);
 
-            // 4c) install deps (msys base-devel + mingw libs)
-            _logger.LogInformation("Installing build dependencies via pacman...");
+            _logger.LogInformation("Installing build dependencies...");
             await _processUtil.CmdRun(PacmanDependencies, tempDir, cancellationToken);
 
-            // 5) fetch latest Git tag
+            // 5) fetch latest stable Git tag
             string latestVersion = await GetLatestStableGitTag(cancellationToken);
             _logger.LogInformation("Latest stable Git version: {version}", latestVersion);
 
-            // 6) download + validate
+            // 6) download & sanity-check the tarball
             string archivePath = Path.Combine(tempDir, "git.tar.gz");
             string downloadUrl = $"https://github.com/git/git/archive/refs/tags/{latestVersion}.tar.gz";
             _logger.LogInformation("Downloading Git source from {url}", downloadUrl);
             await DownloadWithRetry(downloadUrl, archivePath, cancellationToken);
             ValidateGzip(archivePath);
 
-            // 7) extract + build under MSYS2
+            // 7) extract
             string msysTemp = ToMsysPath(tempDir);
             string msysArchive = ToMsysPath(archivePath);
             _logger.LogInformation("Extracting Git source...");
             await _processUtil.CmdRun(
-                $@"bash -lc ""tar -xzf {msysArchive} -C {msysTemp}""",
+                $@"bash -lc ""export MSYSTEM=MINGW64; tar -xzf {msysArchive} -C {msysTemp}""",
                 tempDir, cancellationToken);
 
             string gitSrcWin = Path.Combine(tempDir, $"git-{latestVersion.TrimStart('v')}");
             string gitSrcMsys = ToMsysPath(gitSrcWin);
 
-            // clean + create staging dist
-            var distRoot = Path.Combine(tempDir, "dist");
-            if (Directory.Exists(distRoot))
-                Directory.Delete(distRoot, recursive: true);
+            // 8) clean + create staging dir
+            string distRoot = Path.Combine(tempDir, "dist");
+            if (Directory.Exists(distRoot)) Directory.Delete(distRoot, recursive: true);
             Directory.CreateDirectory(distRoot);
             string distMsys = ToMsysPath(distRoot);
 
-            _logger.LogInformation("Configuring & building Git...");
-            var buildScript = $@"
-cd {gitSrcMsys}
-make configure
-./configure --prefix=/mingw64 --with-openssl --with-curl
-make -j{Environment.ProcessorCount}
-make install DESTDIR={distMsys}";
-            await _processUtil.CmdRun(
-                $@"bash -lc ""{buildScript}""",
-                tempDir, cancellationToken);
+            // 9) configure → make → install
+            _logger.LogInformation("Configuring & building Git from source...");
+            string buildCmd =
+                $@"export MSYSTEM=MINGW64; " +
+                "export PATH=/mingw64/bin:/usr/bin:$PATH; " +
+                $"cd {gitSrcMsys}; " +
+                "make configure; " +
+                "./configure --prefix=/mingw64 --with-openssl --with-curl; " +
+                $"make -j{Environment.ProcessorCount}; " +
+                $"make install DESTDIR={distMsys}";
+            await _processUtil.CmdRun($@"bash -lc ""{buildCmd}""", tempDir, cancellationToken);
 
-            // 8) locate git.exe
-            string distBin = Path.Combine(distRoot, "mingw64", "bin");
+            // 10) grab the result
+            string binDir = Path.Combine(distRoot, "mingw64", "bin");
             var gitExe = Directory
-                .EnumerateFiles(distBin, "git.exe", SearchOption.TopDirectoryOnly)
+                .EnumerateFiles(binDir, "git.exe", SearchOption.TopDirectoryOnly)
                 .FirstOrDefault();
-            if (gitExe == null)
-                throw new FileNotFoundException("git.exe not found after build", distBin);
 
-            _logger.LogInformation("Built git.exe at {path}", gitExe);
+            if (string.IsNullOrEmpty(gitExe))
+                throw new FileNotFoundException(
+                    "git.exe not found after building from source", binDir);
+
+            _logger.LogInformation("Successfully built git.exe at {path}", gitExe);
             return gitExe;
         }
 
         private async Task DownloadWithRetry(
-            string url,
-            string destinationPath,
-            CancellationToken cancellationToken)
+            string url, string dst, CancellationToken ct)
         {
-            const int maxAttempts = 3;
+            const int MAX = 3;
             var delay = TimeSpan.FromSeconds(2);
-            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            for (int i = 1; i <= MAX; i++)
             {
                 try
                 {
-                    await _fileDownloadUtil
-                        .Download(url, destinationPath, cancellationToken: cancellationToken);
+                    await _fileDownloadUtil.Download(url, dst, cancellationToken: ct);
                     return;
                 }
-                catch (Exception ex) when (attempt < maxAttempts)
+                catch (Exception ex) when (i < MAX)
                 {
                     _logger.LogWarning(
                         ex,
-                        "Download failed (attempt {Attempt}/{Max}). Retrying in {Delay}s…",
-                        attempt, maxAttempts, delay.TotalSeconds);
-                    await Task.Delay(delay, cancellationToken);
+                        "Download attempt {i}/{MAX} failed; retrying in {s}s",
+                        i, MAX, delay.TotalSeconds);
+                    await Task.Delay(delay, ct);
                     delay *= 2;
                 }
             }
-
-            throw new InvalidOperationException($"Failed to download after {maxAttempts} attempts: {url}");
+            throw new InvalidOperationException($"Could not download {url} after {MAX} tries");
         }
 
         private static void ValidateGzip(string path)
         {
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read);
             if (fs.Length < 2 || fs.ReadByte() != 0x1F || fs.ReadByte() != 0x8B)
-                throw new InvalidDataException($"{path} is not a valid gzip archive.");
+                throw new InvalidDataException($"{path} is not a valid gzip archive");
         }
 
-        private static string ToMsysPath(string winPath)
+        private static string ToMsysPath(string win)
         {
-            var p = winPath.Replace('\\', '/');
+            // C:\… → /c/…
+            var p = win.Replace('\\', '/');
             if (p.Length >= 2 && p[1] == ':')
             {
-                var drive = char.ToLowerInvariant(p[0]);
-                p = $"/{drive}{p.Substring(2)}";
+                var d = char.ToLowerInvariant(p[0]);
+                p = $"/{d}{p.Substring(2)}";
             }
             return p;
         }
@@ -179,31 +185,30 @@ make install DESTDIR={distMsys}";
         public async ValueTask<string> GetLatestStableGitTag(
             CancellationToken cancellationToken = default)
         {
-            var client = await _httpClientCache
-                .Get(nameof(BuildLibraryUtil), cancellationToken: cancellationToken);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("DotNetGitTool/1.0");
+            var cli = await _httpClientCache.Get(
+                nameof(BuildLibraryUtil),
+                cancellationToken: cancellationToken);
+            cli.DefaultRequestHeaders.UserAgent.ParseAdd("DotNetGitTool/1.0");
 
-            var tags = await client
-                .GetFromJsonAsync<JsonElement[]>(
-                    "https://api.github.com/repos/git/git/tags",
-                    cancellationToken);
+            var tags = await cli.GetFromJsonAsync<JsonElement[]>(
+                "https://api.github.com/repos/git/git/tags",
+                cancellationToken);
 
-            if (tags == null)
-                throw new InvalidOperationException("Could not fetch tags from GitHub API.");
+            if (tags == null) throw new InvalidOperationException("No tags from GitHub");
 
-            foreach (var tag in tags)
+            foreach (var t in tags)
             {
-                var name = tag.GetProperty("name").GetString();
-                if (name != null
-                    && !name.Contains("-rc", StringComparison.OrdinalIgnoreCase)
-                    && !name.Contains("-beta", StringComparison.OrdinalIgnoreCase)
-                    && !name.Contains("-alpha", StringComparison.OrdinalIgnoreCase))
+                var n = t.GetProperty("name").GetString();
+                if (n != null
+                    && !n.Contains("-rc", StringComparison.OrdinalIgnoreCase)
+                    && !n.Contains("-beta", StringComparison.OrdinalIgnoreCase)
+                    && !n.Contains("-alpha", StringComparison.OrdinalIgnoreCase))
                 {
-                    return name;
+                    return n;
                 }
             }
 
-            throw new InvalidOperationException("No stable Git version found.");
+            throw new InvalidOperationException("No stable Git tag found");
         }
     }
 }
