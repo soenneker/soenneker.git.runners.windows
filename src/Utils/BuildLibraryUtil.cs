@@ -29,11 +29,14 @@ namespace Soenneker.Git.Runners.Windows.Utils
             @"bash -lc ""export MSYSTEM=MINGW64; pacman -Sy --noconfirm""";
         private const string PacmanUpgrade =
             @"bash -lc ""export MSYSTEM=MINGW64; MSYS2_ARG_CONV_EXCL='*' pacman -Su --noconfirm""";
+
         private const string PacmanDependencies =
             @"bash -lc ""export MSYSTEM=MINGW64; pacman -Sy --noconfirm --needed " +
             "mingw-w64-x86_64-toolchain base-devel mingw-w64-x86_64-curl " +
             "mingw-w64-x86_64-libiconv mingw-w64-x86_64-expat " +
-            "mingw-w64-x86_64-openssl mingw-w64-x86_64-zlib\"";
+            "mingw-w64-x86_64-openssl mingw-w64-x86_64-zlib " +
+            "autoconf automake-wrapper libtool " +
+            "mingw-w64-x86_64-pcre2\"";
 
         private readonly ILogger<BuildLibraryUtil> _logger;
         private readonly IDirectoryUtil _directoryUtil;
