@@ -18,7 +18,7 @@ env:
 jobs:
 
   daily-automatic-update:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
   
     steps:
       - uses: actions/checkout@v4
@@ -33,29 +33,8 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
-      - name: Install dependencies with retry
-        run: |
-          retries=5
-          base_wait_time=15
-          exponent=2
-
-          for i in $(seq 1 $retries); do
-            if dotnet restore; then
-              break
-            fi
-
-            if [ $i -lt $retries ]; then
-              wait_time=$(awk "BEGIN {print int($base_wait_time * ($exponent ^ ($i - 1)))}")
-              echo "dotnet restore failed, retrying in $wait_time seconds..."
-              sleep $wait_time
-            else
-              echo "dotnet restore failed after $retries retries."
-              exit 1
-            fi
-          done
-
       - name: Build
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build --configuration Release
 
       - name: Run
         run: dotnet run --project src/Soenneker.Git.Runners.Windows.csproj --no-restore --verbosity normal --framework net9.0 --configuration Release
