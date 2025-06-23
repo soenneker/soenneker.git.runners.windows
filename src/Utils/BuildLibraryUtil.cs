@@ -142,8 +142,18 @@ public sealed class BuildLibraryUtil : IBuildLibraryUtil
         string stagingDir = Path.Combine(tempDir, "install");
         // START >> FIX
         // Also provide the PATH for the 'make install' command.
-        string installSnippet = $"{ReproEnv} cd {gitDir} && PATH=\"{mxeBin}:$PATH\" make install DESTDIR={stagingDir}";
-        // END >> FIX
+      
+string installSnippet =
+    $"{ReproEnv} cd {gitDir} && " +
+    $"PATH=\"{mxeBin}:$PATH\" " +
+    "make " +
+    $"install DESTDIR={stagingDir} " +
+    "CC=x86_64-w64-mingw32.static-gcc " +
+    "CFLAGS=\"-static -O2 -pipe -DNO_POSIX_SOCKETS\" " +
+    $"LDFLAGS=\"-static -L{libPath}\" " +
+    "LIBS=\"-lcurl -lssl -lcrypto -lz -lws2_32 -lpsapi -lcrypt32 -lsecur32\"";
+
+
         await _processUtil.BashRun(installSnippet, "", tempDir, cancellationToken);
 
         _logger.LogInformation("Locating the 'git' executable in the staging directory…");
