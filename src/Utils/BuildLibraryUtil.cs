@@ -118,8 +118,7 @@ EXTLIBS += \
   -lnghttp2 \
   -lngtcp2 -lngtcp2_crypto_ossl \
   -lnghttp3 \
-  -lpsl -lunistring \
-  -lidn2 \
+  -lpsl -lidn2 -lunistring \
   -lssh2 \
   -lssl -lcrypto \
   -lwldap32 \
