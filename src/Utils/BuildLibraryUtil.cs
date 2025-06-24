@@ -25,28 +25,17 @@ namespace Soenneker.Git.Runners.Windows.Utils
         private const string InstallMsys2 = "choco install -y msys2";
 
         // Run under MINGW64 shell so pacman and build tools target mingw64
-        private const string PacmanSync =
-            @"bash -lc ""export MSYSTEM=MINGW64; pacman -Sy --noconfirm""";
-        private const string PacmanUpgrade =
-            @"bash -lc ""export MSYSTEM=MINGW64; MSYS2_ARG_CONV_EXCL='*' pacman -Su --noconfirm""";
+        private const string PacmanSync = @"bash -lc ""export MSYSTEM=MINGW64; pacman -Sy --noconfirm""";
+        private const string PacmanUpgrade = @"bash -lc ""export MSYSTEM=MINGW64; MSYS2_ARG_CONV_EXCL='*' pacman -Su --noconfirm""";
 
-        private const string PacmanDependencies =
-            @"bash -lc ""export MSYSTEM=MINGW64; pacman -Sy --noconfirm --needed " +
-            "mingw-w64-x86_64-toolchain mingw-w64-x86_64-pkgconf base-devel " +
-            "mingw-w64-x86_64-curl " +
-            "mingw-w64-x86_64-libiconv mingw-w64-x86_64-expat mingw-w64-x86_64-zlib " +
-            "mingw-w64-x86_64-openssl " +
-            "mingw-w64-x86_64-zstd " +
-            "mingw-w64-x86_64-brotli " +
-            "mingw-w64-x86_64-nghttp2 " +
-            "mingw-w64-x86_64-ngtcp2 " +               // <-- contains the crypto helpers
-            "mingw-w64-x86_64-nghttp3 " +
-            "mingw-w64-x86_64-libssh2 " +
-            "mingw-w64-x86_64-libidn2 " +
-            "mingw-w64-x86_64-libunistring " +         // <-- already present
-            "mingw-w64-x86_64-libpsl " +
-            "autoconf automake-wrapper libtool " +
-            "mingw-w64-x86_64-pcre2\"";
+        private const string PacmanDependencies = @"bash -lc ""export MSYSTEM=MINGW64; pacman -Sy --noconfirm --needed " +
+                                                  "mingw-w64-x86_64-toolchain mingw-w64-x86_64-pkgconf base-devel " + "mingw-w64-x86_64-curl " +
+                                                  "mingw-w64-x86_64-libiconv mingw-w64-x86_64-expat mingw-w64-x86_64-zlib " + "mingw-w64-x86_64-openssl " +
+                                                  "mingw-w64-x86_64-zstd " + "mingw-w64-x86_64-brotli " + "mingw-w64-x86_64-nghttp2 " +
+                                                  "mingw-w64-x86_64-ngtcp2 " + // <-- contains the crypto helpers
+                                                  "mingw-w64-x86_64-nghttp3 " + "mingw-w64-x86_64-libssh2 " + "mingw-w64-x86_64-libidn2 " +
+                                                  "mingw-w64-x86_64-libunistring " + // <-- already present
+                                                  "mingw-w64-x86_64-libpsl " + "autoconf automake-wrapper libtool " + "mingw-w64-x86_64-pcre2\"";
 
         private readonly ILogger<BuildLibraryUtil> _logger;
         private readonly IDirectoryUtil _directoryUtil;
@@ -54,12 +43,8 @@ namespace Soenneker.Git.Runners.Windows.Utils
         private readonly IFileDownloadUtil _fileDownloadUtil;
         private readonly IProcessUtil _processUtil;
 
-        public BuildLibraryUtil(
-            ILogger<BuildLibraryUtil> logger,
-            IDirectoryUtil directoryUtil,
-            IHttpClientCache httpClientCache,
-            IFileDownloadUtil fileDownloadUtil,
-            IProcessUtil processUtil)
+        public BuildLibraryUtil(ILogger<BuildLibraryUtil> logger, IDirectoryUtil directoryUtil, IHttpClientCache httpClientCache,
+            IFileDownloadUtil fileDownloadUtil, IProcessUtil processUtil)
         {
             _logger = logger;
             _directoryUtil = directoryUtil;
@@ -105,9 +90,7 @@ namespace Soenneker.Git.Runners.Windows.Utils
             string msysTemp = ToMsysPath(tempDir);
             string msysArchive = ToMsysPath(archivePath);
             _logger.LogInformation("Extracting Git source...");
-            await _processUtil.CmdRun(
-                $@"bash -lc ""export MSYSTEM=MINGW64; tar -xzf {msysArchive} -C {msysTemp}""",
-                tempDir, cancellationToken);
+            await _processUtil.CmdRun($@"bash -lc ""export MSYSTEM=MINGW64; tar -xzf {msysArchive} -C {msysTemp}""", tempDir, cancellationToken);
 
             string gitSrcWin = Path.Combine(tempDir, $"git-{latestVersion.TrimStart('v')}");
             string gitSrcMsys = ToMsysPath(gitSrcWin);
@@ -130,16 +113,18 @@ CFLAGS  += -O2 -pipe -static -static-libgcc -static-libstdc++ -DCURL_STATICLIB -
 LDFLAGS += -static -static-libgcc -static-libstdc++ -s
 EXTLIBS += \
   -lpcre2-8 -lpcre2-posix \
-  -lws2_32 -lcrypt32 -lbcrypt -lz -lshlwapi \
   -lzstd \
   -lbrotlidec -lbrotlicommon \
   -lnghttp2 \
   -lngtcp2 -lngtcp2_crypto_ossl \
   -lnghttp3 \
-  -lidn2 -lunistring \
-  -lpsl -lwldap32 \
+  -lpsl -lunistring \
+  -lidn2 \
+  -lssh2 \
   -lssl -lcrypto \
-  -lssh2";
+  -lwldap32 \
+  -lws2_32 -lcrypt32 -lbcrypt -lshlwapi \
+  -lz";
             await File.WriteAllTextAsync(configPath, configContents, cancellationToken);
 
             // -----------------------------------------------------------------
@@ -147,24 +132,17 @@ EXTLIBS += \
             // -----------------------------------------------------------------
             _logger.LogInformation("Building Git (MinGW makefiles) ...");
 
-            string buildCmd =
-                "export MSYSTEM=MINGW64 && " +
-                "export PATH=/mingw64/bin:/usr/bin:$PATH && " +
-                "export PKG_CONFIG='pkg-config --static' && " +
-                "export LIBRARY_PATH=/mingw64/lib:$LIBRARY_PATH && " +
-                "export CFLAGS='-O2 -pipe -static -static-libgcc -static-libstdc++ -DCURL_STATICLIB' && " +
-                "export LDFLAGS='-static -static-libgcc -static-libstdc++ -s' && " +
-                "set -euo pipefail && " +
-                $"cd {gitSrcMsys} && " +
-                $"make -j{Environment.ProcessorCount} V=1 && " +          // CHANGED
-                $"make install prefix=/mingw64 DESTDIR={distMsys}";        // CHANGED
+            string buildCmd = "export MSYSTEM=MINGW64 && " + "export PATH=/mingw64/bin:/usr/bin:$PATH && " + "export PKG_CONFIG='pkg-config --static' && " +
+                              "export LIBRARY_PATH=/mingw64/lib:$LIBRARY_PATH && " +
+                              "export CFLAGS='-O2 -pipe -static -static-libgcc -static-libstdc++ -DCURL_STATICLIB' && " +
+                              "export LDFLAGS='-static -static-libgcc -static-libstdc++ -s' && " + "set -euo pipefail && " + $"cd {gitSrcMsys} && " +
+                              $"make -j{Environment.ProcessorCount} V=1 && " + // CHANGED
+                              $"make install prefix=/mingw64 DESTDIR={distMsys}"; // CHANGED
 
             await _processUtil.CmdRun($@"bash -lc ""{buildCmd}""", tempDir, cancellationToken);
 
             string binDir = Path.Combine(distRoot, "mingw64", "bin");
-            var gitExe = Directory
-                .EnumerateFiles(binDir, "git.exe", SearchOption.TopDirectoryOnly)
-                .FirstOrDefault();
+            var gitExe = Directory.EnumerateFiles(binDir, "git.exe", SearchOption.TopDirectoryOnly).FirstOrDefault();
 
             if (string.IsNullOrEmpty(gitExe))
                 throw new FileNotFoundException("git.exe not found after building from source", binDir);
@@ -173,8 +151,7 @@ EXTLIBS += \
             return gitExe;
         }
 
-        private async Task DownloadWithRetry(
-            string url, string dst, CancellationToken ct)
+        private async Task DownloadWithRetry(string url, string dst, CancellationToken ct)
         {
             const int MAX = 3;
             var delay = TimeSpan.FromSeconds(2);
@@ -187,14 +164,12 @@ EXTLIBS += \
                 }
                 catch (Exception ex) when (i < MAX)
                 {
-                    _logger.LogWarning(
-                        ex,
-                        "Download attempt {i}/{MAX} failed; retrying in {s}s",
-                        i, MAX, delay.TotalSeconds);
+                    _logger.LogWarning(ex, "Download attempt {i}/{MAX} failed; retrying in {s}s", i, MAX, delay.TotalSeconds);
                     await Task.Delay(delay, ct);
                     delay *= 2;
                 }
             }
+
             throw new InvalidOperationException($"Could not download {url} after {MAX} tries");
         }
 
@@ -214,30 +189,24 @@ EXTLIBS += \
                 var d = char.ToLowerInvariant(p[0]);
                 p = $"/{d}{p.Substring(2)}";
             }
+
             return p;
         }
 
-        public async ValueTask<string> GetLatestStableGitTag(
-            CancellationToken cancellationToken = default)
+        public async ValueTask<string> GetLatestStableGitTag(CancellationToken cancellationToken = default)
         {
-            var cli = await _httpClientCache.Get(
-                nameof(BuildLibraryUtil),
-                cancellationToken: cancellationToken);
+            var cli = await _httpClientCache.Get(nameof(BuildLibraryUtil), cancellationToken: cancellationToken);
             cli.DefaultRequestHeaders.UserAgent.ParseAdd("DotNetGitTool/1.0");
 
-            var tags = await cli.GetFromJsonAsync<JsonElement[]>(
-                "https://api.github.com/repos/git/git/tags",
-                cancellationToken);
+            var tags = await cli.GetFromJsonAsync<JsonElement[]>("https://api.github.com/repos/git/git/tags", cancellationToken);
 
             if (tags == null) throw new InvalidOperationException("No tags from GitHub");
 
             foreach (var t in tags)
             {
                 var n = t.GetProperty("name").GetString();
-                if (n != null
-                    && !n.Contains("-rc", StringComparison.OrdinalIgnoreCase)
-                    && !n.Contains("-beta", StringComparison.OrdinalIgnoreCase)
-                    && !n.Contains("-alpha", StringComparison.OrdinalIgnoreCase))
+                if (n != null && !n.Contains("-rc", StringComparison.OrdinalIgnoreCase) && !n.Contains("-beta", StringComparison.OrdinalIgnoreCase) &&
+                    !n.Contains("-alpha", StringComparison.OrdinalIgnoreCase))
                 {
                     return n;
                 }
