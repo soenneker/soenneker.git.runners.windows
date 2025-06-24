@@ -116,9 +116,9 @@ namespace Soenneker.Git.Runners.Windows.Utils
 NO_GETTEXT=YesPlease
 NO_UNIX_SOCKETS=YesPlease
 USE_LIBPCRE2=Yes
-CFLAGS  += -O2 -pipe -static -static-libgcc -static-libstdc++ -DCURL_STATICLIB
+CFLAGS  += -O2 -pipe -static -static-libgcc -static-libstdc++ -DCURL_STATICLIB -DPCRE2_STATIC
 LDFLAGS += -static -static-libgcc -static-libstdc++ -s
-EXTLIBS += -lws2_32 -lcrypt32 -lbcrypt -lz -lshlwapi";
+EXTLIBS += -lpcre2-8 -lpcre2-posix -lws2_32 -lcrypt32 -lbcrypt -lz -lshlwapi";
             await File.WriteAllTextAsync(configPath, configContents, cancellationToken);
 
             // -----------------------------------------------------------------
