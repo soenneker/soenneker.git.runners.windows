@@ -39,12 +39,11 @@ namespace Soenneker.Git.Runners.Windows.Utils
             "mingw-w64-x86_64-zstd " +
             "mingw-w64-x86_64-brotli " +
             "mingw-w64-x86_64-nghttp2 " +
-            "mingw-w64-x86_64-ngtcp2 " +
-            "mingw-w64-x86_64-ngtcp2_crypto_openssl " + // ✅ NEW
+            "mingw-w64-x86_64-ngtcp2 " +               // <-- contains the crypto helpers
             "mingw-w64-x86_64-nghttp3 " +
             "mingw-w64-x86_64-libssh2 " +
             "mingw-w64-x86_64-libidn2 " +
-            "mingw-w64-x86_64-libunistring " +          // ✅ NEW
+            "mingw-w64-x86_64-libunistring " +         // <-- already present
             "mingw-w64-x86_64-libpsl " +
             "autoconf automake-wrapper libtool " +
             "mingw-w64-x86_64-pcre2\"";
@@ -130,7 +129,8 @@ USE_LIBPCRE2=Yes
 CFLAGS  += -O2 -pipe -static -static-libgcc -static-libstdc++ -DCURL_STATICLIB -DPCRE2_STATIC
 LDFLAGS += -static -static-libgcc -static-libstdc++ -s
 EXTLIBS += -lpcre2-8 -lpcre2-posix -lws2_32 -lcrypt32 -lbcrypt -lz -lshlwapi \
-           -lzstd -lbrotlidec -lnghttp2 -lngtcp2 -lngtcp2_crypto_openssl -lnghttp3 \
+           -lzstd -lbrotlidec -lbrotlicommon \
+           -lnghttp2 -lngtcp2 -lngtcp2_crypto_openssl -lnghttp3 \
            -lidn2 -lunistring -lpsl -lwldap32 -lssl -lcrypto -lssh2";
             await File.WriteAllTextAsync(configPath, configContents, cancellationToken);
 
