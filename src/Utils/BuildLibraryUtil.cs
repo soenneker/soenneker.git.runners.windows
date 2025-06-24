@@ -128,7 +128,7 @@ USE_LIBPCRE2=Yes
 CFLAGS  += -O2 -pipe -static -static-libgcc -static-libstdc++ -DCURL_STATICLIB -DPCRE2_STATIC
 LDFLAGS += -static -static-libgcc -static-libstdc++ -s
 EXTLIBS += -lpcre2-8 -lpcre2-posix -lws2_32 -lcrypt32 -lbcrypt -lz -lshlwapi \
-           -lzstd -lbrotlidec-static -lnghttp2 -lngtcp2 -lnghttp3 \
+           -lzstd -lbrotlidec -lnghttp2 -lngtcp2 -lnghttp3 \
            -lidn2 -lpsl -lwldap32 -lssl -lcrypto -lssh2";
             await File.WriteAllTextAsync(configPath, configContents, cancellationToken);
 
