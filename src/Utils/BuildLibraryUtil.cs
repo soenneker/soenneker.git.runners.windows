@@ -32,7 +32,7 @@ namespace Soenneker.Git.Runners.Windows.Utils
 
         private const string PacmanDependencies =
             @"bash -lc ""export MSYSTEM=MINGW64; pacman -Sy --noconfirm --needed " +
-            "mingw-w64-x86_64-toolchain base-devel " +
+            "mingw-w64-x86_64-toolchain mingw-w64-x86_64-pkgconf base-devel " +
             "mingw-w64-x86_64-curl " +
             "mingw-w64-x86_64-libiconv mingw-w64-x86_64-expat mingw-w64-x86_64-zlib " +
             "mingw-w64-x86_64-openssl " +
@@ -128,10 +128,18 @@ NO_UNIX_SOCKETS=YesPlease
 USE_LIBPCRE2=Yes
 CFLAGS  += -O2 -pipe -static -static-libgcc -static-libstdc++ -DCURL_STATICLIB -DPCRE2_STATIC
 LDFLAGS += -static -static-libgcc -static-libstdc++ -s
-EXTLIBS += -lpcre2-8 -lpcre2-posix -lws2_32 -lcrypt32 -lbcrypt -lz -lshlwapi \
-           -lzstd -lbrotlidec -lbrotlicommon \
-           -lnghttp2 -lngtcp2 -lngtcp2_crypto_openssl -lnghttp3 \
-           -lidn2 -lunistring -lpsl -lwldap32 -lssl -lcrypto -lssh2";
+EXTLIBS += \
+  -lpcre2-8 -lpcre2-posix \
+  -lws2_32 -lcrypt32 -lbcrypt -lz -lshlwapi \
+  -lzstd \
+  -lbrotlidec -lbrotlicommon \
+  -lnghttp2 \
+  -lngtcp2 -lngtcp2_crypto_ossl \
+  -lnghttp3 \
+  -lidn2 -lunistring \
+  -lpsl -lwldap32 \
+  -lssl -lcrypto \
+  -lssh2";
             await File.WriteAllTextAsync(configPath, configContents, cancellationToken);
 
             // -----------------------------------------------------------------
