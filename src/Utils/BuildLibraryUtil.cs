@@ -60,24 +60,20 @@ namespace Soenneker.Git.Runners.Windows.Utils
 
         public async ValueTask<string> Build(CancellationToken cancellationToken)
         {
-            // 1) make a clean temp dir
             string tempDir = await _directoryUtil.CreateTempDirectory(cancellationToken);
 
-            // 2) install msys2 if missing
             if (!File.Exists(Path.Combine(MsysBin, "bash.exe")))
             {
                 _logger.LogInformation("Installing MSYS2 via Chocolatey...");
                 await _processUtil.CmdRun(InstallMsys2, tempDir, cancellationToken);
             }
 
-            // 3) ensure both usr/bin and mingw64/bin are on PATH
             var path = Environment.GetEnvironmentVariable("PATH")!;
             var parts = path.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList();
             if (!parts.Contains(MsysBin, StringComparer.OrdinalIgnoreCase)) parts.Insert(0, MsysBin);
             if (!parts.Contains(MingwBin, StringComparer.OrdinalIgnoreCase)) parts.Insert(0, MingwBin);
             Environment.SetEnvironmentVariable("PATH", string.Join(';', parts));
 
-            // 4) bootstrap MSYS2: sync DB, upgrade, then install build deps
             _logger.LogInformation("Synchronizing pacman database...");
             await _processUtil.CmdRun(PacmanSync, tempDir, cancellationToken);
 
@@ -87,18 +83,15 @@ namespace Soenneker.Git.Runners.Windows.Utils
             _logger.LogInformation("Installing build dependencies...");
             await _processUtil.CmdRun(PacmanDependencies, tempDir, cancellationToken);
 
-            // 5) fetch latest stable Git tag
             string latestVersion = await GetLatestStableGitTag(cancellationToken);
             _logger.LogInformation("Latest stable Git version: {version}", latestVersion);
 
-            // 6) download & sanity-check the tarball
             string archivePath = Path.Combine(tempDir, "git.tar.gz");
             string downloadUrl = $"https://github.com/git/git/archive/refs/tags/{latestVersion}.tar.gz";
             _logger.LogInformation("Downloading Git source from {url}", downloadUrl);
             await DownloadWithRetry(downloadUrl, archivePath, cancellationToken);
             ValidateGzip(archivePath);
 
-            // 7) extract
             string msysTemp = ToMsysPath(tempDir);
             string msysArchive = ToMsysPath(archivePath);
             _logger.LogInformation("Extracting Git source...");
@@ -109,29 +102,32 @@ namespace Soenneker.Git.Runners.Windows.Utils
             string gitSrcWin = Path.Combine(tempDir, $"git-{latestVersion.TrimStart('v')}");
             string gitSrcMsys = ToMsysPath(gitSrcWin);
 
-            // 8) clean + create staging dir
             string distRoot = Path.Combine(tempDir, "dist");
             if (Directory.Exists(distRoot)) Directory.Delete(distRoot, recursive: true);
             Directory.CreateDirectory(distRoot);
             string distMsys = ToMsysPath(distRoot);
 
-            // ————— NEW STEP: write config.mak from .NET —————
+            // -----------------------------------------------------------------
+            // Write config.mak
+            // -----------------------------------------------------------------
             _logger.LogInformation("Writing config.mak...");
             var configPath = Path.Combine(gitSrcWin, "config.mak");
             var configContents = @"NO_TCLTK=YesPlease
 NO_GETTEXT=YesPlease
+NO_UNIX_SOCKETS=YesPlease
 USE_LIBPCRE2=Yes
 CFLAGS  += -O2 -pipe -static -static-libgcc -static-libstdc++ -DCURL_STATICLIB
 LDFLAGS += -static -static-libgcc -static-libstdc++ -s
 EXTLIBS += -lws2_32 -lcrypt32 -lbcrypt -lz -lshlwapi";
             await File.WriteAllTextAsync(configPath, configContents, cancellationToken);
 
-            // 9) configure → make → install
-            _logger.LogInformation("Configuring & building Git from source...");
-            _logger.LogInformation("Configuring & building Git from source...");
+            // -----------------------------------------------------------------
+            // Build & install *without* running ./configure  << CHANGED
+            // -----------------------------------------------------------------
+            _logger.LogInformation("Building Git (MinGW makefiles) ...");
+
             string buildCmd =
                 "export MSYSTEM=MINGW64 && " +
-                // Add the MinGW and MSYS binary directories to the start of the PATH
                 "export PATH=/mingw64/bin:/usr/bin:$PATH && " +
                 "export PKG_CONFIG='pkg-config --static' && " +
                 "export LIBRARY_PATH=/mingw64/lib:$LIBRARY_PATH && " +
@@ -139,23 +135,18 @@ EXTLIBS += -lws2_32 -lcrypt32 -lbcrypt -lz -lshlwapi";
                 "export LDFLAGS='-static -static-libgcc -static-libstdc++ -s' && " +
                 "set -euo pipefail && " +
                 $"cd {gitSrcMsys} && " +
-                "make configure && " +
-                // Removed the redundant --with-pcre2 flag
-                "./configure --prefix=/mingw64 --with-openssl --with-curl && " +
-                $"make -j{Environment.ProcessorCount} V=1 && " +
-                $"make install DESTDIR={distMsys}";
+                $"make -j{Environment.ProcessorCount} V=1 && " +          // CHANGED
+                $"make install prefix=/mingw64 DESTDIR={distMsys}";        // CHANGED
 
             await _processUtil.CmdRun($@"bash -lc ""{buildCmd}""", tempDir, cancellationToken);
 
-            // 10) grab the result
             string binDir = Path.Combine(distRoot, "mingw64", "bin");
             var gitExe = Directory
                 .EnumerateFiles(binDir, "git.exe", SearchOption.TopDirectoryOnly)
                 .FirstOrDefault();
 
             if (string.IsNullOrEmpty(gitExe))
-                throw new FileNotFoundException(
-                    "git.exe not found after building from source", binDir);
+                throw new FileNotFoundException("git.exe not found after building from source", binDir);
 
             _logger.LogInformation("Successfully built git.exe at {path}", gitExe);
             return gitExe;
