@@ -32,9 +32,18 @@ namespace Soenneker.Git.Runners.Windows.Utils
 
         private const string PacmanDependencies =
             @"bash -lc ""export MSYSTEM=MINGW64; pacman -Sy --noconfirm --needed " +
-            "mingw-w64-x86_64-toolchain base-devel mingw-w64-x86_64-curl " +
-            "mingw-w64-x86_64-libiconv mingw-w64-x86_64-expat " +
-            "mingw-w64-x86_64-openssl mingw-w64-x86_64-zlib " +
+            "mingw-w64-x86_64-toolchain base-devel " +
+            "mingw-w64-x86_64-curl " +
+            "mingw-w64-x86_64-libiconv mingw-w64-x86_64-expat mingw-w64-x86_64-zlib " +
+            "mingw-w64-x86_64-openssl " +
+            "mingw-w64-x86_64-zstd " +
+            "mingw-w64-x86_64-brotli " +
+            "mingw-w64-x86_64-nghttp2 " +
+            "mingw-w64-x86_64-ngtcp2 " +
+            "mingw-w64-x86_64-nghttp3 " +
+            "mingw-w64-x86_64-libssh2 " +
+            "mingw-w64-x86_64-libidn2 " +
+            "mingw-w64-x86_64-libpsl " +
             "autoconf automake-wrapper libtool " +
             "mingw-w64-x86_64-pcre2\"";
 
@@ -118,7 +127,9 @@ NO_UNIX_SOCKETS=YesPlease
 USE_LIBPCRE2=Yes
 CFLAGS  += -O2 -pipe -static -static-libgcc -static-libstdc++ -DCURL_STATICLIB -DPCRE2_STATIC
 LDFLAGS += -static -static-libgcc -static-libstdc++ -s
-EXTLIBS += -lpcre2-8 -lpcre2-posix -lws2_32 -lcrypt32 -lbcrypt -lz -lshlwapi";
+EXTLIBS += -lpcre2-8 -lpcre2-posix -lws2_32 -lcrypt32 -lbcrypt -lz -lshlwapi \
+           -lzstd -lbrotlidec-static -lnghttp2 -lngtcp2 -lnghttp3 \
+           -lidn2 -lpsl -lwldap32 -lssl -lcrypto -lssh2";
             await File.WriteAllTextAsync(configPath, configContents, cancellationToken);
 
             // -----------------------------------------------------------------
