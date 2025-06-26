@@ -5,5 +5,5 @@ namespace Soenneker.Git.Runners.Windows.Utils.Abstract;
 
 public interface IFileOperationsUtil
 {
-    ValueTask Process(CancellationToken cancellationToken = default);
+    ValueTask<string?> Process(CancellationToken cancellationToken = default);
 }

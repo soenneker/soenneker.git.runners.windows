@@ -49,7 +49,7 @@ public sealed class FileOperationsUtil : IFileOperationsUtil
         _sevenZipCompressionUtil = sevenZipCompressionUtil;
     }
 
-    public async ValueTask Process(CancellationToken cancellationToken)
+    public async ValueTask<string?> Process(CancellationToken cancellationToken)
     {
         string gitDirectory =
             await _gitUtil.CloneToTempDirectory($"https://github.com/soenneker/{Constants.Library.ToLowerInvariantFast()}", cancellationToken);
@@ -66,11 +66,13 @@ public sealed class FileOperationsUtil : IFileOperationsUtil
         bool needToUpdate = await CheckForHashDifferences(extractionDir, gitDirectory, cancellationToken);
 
         if (!needToUpdate)
-            return;
+            return null;
 
-        await BuildPackAndPush(gitDirectory, extractionDir, cancellationToken);
+        return extractionDir;
 
-        await SaveHashToGitRepo(gitDirectory, cancellationToken);
+       // await BuildPackAndPush(gitDirectory, extractionDir, cancellationToken);
+
+       // await SaveHashToGitRepo(gitDirectory, cancellationToken);
     }
 
     private async ValueTask BuildPackAndPush(string gitDirectory, string extractionDir, CancellationToken cancellationToken)

@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using LibGit2Sharp;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Soenneker.Git.Runners.Windows.Utils.Abstract;
@@ -19,7 +21,8 @@ public sealed class ConsoleHostedService : IHostedService
 
     private int? _exitCode;
 
-    public ConsoleHostedService(ILogger<ConsoleHostedService> logger, IHostApplicationLifetime appLifetime, IRunnersManager runnersManager, IFileOperationsUtil fileOperationsUtil)
+    public ConsoleHostedService(ILogger<ConsoleHostedService> logger, IHostApplicationLifetime appLifetime, IRunnersManager runnersManager,
+        IFileOperationsUtil fileOperationsUtil)
     {
         _logger = logger;
         _appLifetime = appLifetime;
@@ -37,10 +40,13 @@ public sealed class ConsoleHostedService : IHostedService
 
                 try
                 {
-                    await _fileOperationsUtil.Process(cancellationToken);
+                    string? extractionDir = await _fileOperationsUtil.Process(cancellationToken);
 
-                //    await _runnersManager.PushIfChangesNeeded(filePath, Constants.FileName, Constants.Library,
-                   //     $"https://github.com/soenneker/{Constants.Library}", cancellationToken);
+                    if (extractionDir != null)
+                    {
+                        await _runnersManager.PushIfChangesNeededForDirectory(Path.Combine(@"win-x64", "git"), extractionDir, Constants.Library,
+                            $"https://github.com/soenneker/{Constants.Library}", cancellationToken);
+                    }
 
                     _logger.LogInformation("Complete!");
 
