@@ -1,10 +1,9 @@
-﻿using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
+using Soenneker.Compression.SevenZip.Abstract;
 using Soenneker.Extensions.String;
-using Soenneker.Git.Util.Abstract;
 using Soenneker.Git.Runners.Windows.Utils.Abstract;
+using Soenneker.Git.Util.Abstract;
+using Soenneker.GitHub.Repositories.Releases.Abstract;
 using Soenneker.Utils.Directory.Abstract;
 using Soenneker.Utils.Dotnet.Abstract;
 using Soenneker.Utils.Dotnet.NuGet.Abstract;
@@ -12,6 +11,9 @@ using Soenneker.Utils.Environment;
 using Soenneker.Utils.File.Abstract;
 using Soenneker.Utils.FileSync.Abstract;
 using Soenneker.Utils.SHA3.Abstract;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Soenneker.Git.Runners.Windows.Utils;
 
@@ -26,11 +28,14 @@ public sealed class FileOperationsUtil : IFileOperationsUtil
     private readonly IDirectoryUtil _directoryUtil;
     private readonly IFileUtilSync _fileUtilSync;
     private readonly ISha3Util _sha3Util;
+    private readonly IGitHubRepositoriesReleasesUtil _releasesUtil;
+    private readonly ISevenZipCompressionUtil _sevenZipCompressionUtil;
 
     private string? _newHash;
 
     public FileOperationsUtil(IFileUtil fileUtil, ILogger<FileOperationsUtil> logger, IGitUtil gitUtil, IDotnetUtil dotnetUtil,
-        IDotnetNuGetUtil dotnetNuGetUtil, IDirectoryUtil directoryUtil, IFileUtilSync fileUtilSync, ISha3Util sha3Util)
+        IDotnetNuGetUtil dotnetNuGetUtil, IDirectoryUtil directoryUtil, IFileUtilSync fileUtilSync, ISha3Util sha3Util,
+        IGitHubRepositoriesReleasesUtil releasesUtil, ISevenZipCompressionUtil sevenZipCompressionUtil)
     {
         _fileUtil = fileUtil;
         _logger = logger;
@@ -40,31 +45,43 @@ public sealed class FileOperationsUtil : IFileOperationsUtil
         _directoryUtil = directoryUtil;
         _fileUtilSync = fileUtilSync;
         _sha3Util = sha3Util;
+        _releasesUtil = releasesUtil;
+        _sevenZipCompressionUtil = sevenZipCompressionUtil;
     }
 
-    public async ValueTask Process(string filePath, CancellationToken cancellationToken)
+    public async ValueTask Process(CancellationToken cancellationToken)
     {
-        string gitDirectory = await _gitUtil.CloneToTempDirectory($"https://github.com/soenneker/{Constants.Library.ToLowerInvariantFast()}", cancellationToken);
+        string gitDirectory =
+            await _gitUtil.CloneToTempDirectory($"https://github.com/soenneker/{Constants.Library.ToLowerInvariantFast()}", cancellationToken);
 
-        string targetExePath = Path.Combine(gitDirectory, "src", "Resources", Constants.FileName);
+        string downloadDir = await _directoryUtil.CreateTempDirectory(cancellationToken);
 
-        bool needToUpdate = await CheckForHashDifferences(gitDirectory, filePath, cancellationToken);
+        string? asset = await _releasesUtil.DownloadReleaseAssetByNamePattern("git-for-windows", "git", downloadDir, ["MinGit", "64-bit"], cancellationToken);
+
+        if (asset == null)
+            throw new FileNotFoundException("Could not find the required Git for Windows Portable asset.");
+
+        string extractionDir = await _sevenZipCompressionUtil.Extract(asset, cancellationToken);
+
+        bool needToUpdate = await CheckForHashDifferences(extractionDir, gitDirectory, cancellationToken);
 
         if (!needToUpdate)
             return;
 
-        await BuildPackAndPush(gitDirectory, targetExePath, filePath, cancellationToken);
+        await BuildPackAndPush(gitDirectory, extractionDir, cancellationToken);
 
         await SaveHashToGitRepo(gitDirectory, cancellationToken);
     }
 
-    private async ValueTask BuildPackAndPush(string gitDirectory, string targetExePath, string filePath, CancellationToken cancellationToken)
+    private async ValueTask BuildPackAndPush(string gitDirectory, string extractionDir, CancellationToken cancellationToken)
     {
-        _fileUtilSync.DeleteIfExists(targetExePath);
+        string destinationDir = Path.Combine(gitDirectory, "src", "Resources", "win-x64", "git");
 
-        _directoryUtil.CreateIfDoesNotExist(Path.Combine(gitDirectory, "src", "Resources"));
+        _directoryUtil.CreateIfDoesNotExist(destinationDir);
 
-        _fileUtilSync.Move(filePath, targetExePath);
+        _fileUtilSync.DeleteAll(destinationDir);
+
+        await _fileUtil.CopyRecursively(extractionDir, destinationDir, cancellationToken: cancellationToken);
 
         string projFilePath = Path.Combine(gitDirectory, "src", $"{Constants.Library}.csproj");
 
@@ -89,7 +106,7 @@ public sealed class FileOperationsUtil : IFileOperationsUtil
         await _dotnetNuGetUtil.Push(nuGetPackagePath, apiKey: apiKey, cancellationToken: cancellationToken);
     }
 
-    private async ValueTask<bool> CheckForHashDifferences(string gitDirectory, string filePath, CancellationToken cancellationToken)
+    private async ValueTask<bool> CheckForHashDifferences(string inputDirectory, string gitDirectory, CancellationToken cancellationToken)
     {
         string? oldHash = await _fileUtil.TryRead(Path.Combine(gitDirectory, "hash.txt"), true, cancellationToken);
 
@@ -99,7 +116,7 @@ public sealed class FileOperationsUtil : IFileOperationsUtil
             return true;
         }
 
-        _newHash = await _sha3Util.HashFile(filePath, true, cancellationToken);
+        _newHash = await _sha3Util.HashDirectory(inputDirectory, true, cancellationToken);
 
         if (oldHash == _newHash)
         {

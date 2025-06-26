@@ -15,17 +15,16 @@ public sealed class ConsoleHostedService : IHostedService
 
     private readonly IHostApplicationLifetime _appLifetime;
     private readonly IRunnersManager _runnersManager;
-    private readonly IBuildLibraryUtil _buildLibraryUtil;
+    private readonly IFileOperationsUtil _fileOperationsUtil;
 
     private int? _exitCode;
 
-    public ConsoleHostedService(ILogger<ConsoleHostedService> logger, IHostApplicationLifetime appLifetime, IRunnersManager runnersManager,
-        IBuildLibraryUtil buildLibraryUtil)
+    public ConsoleHostedService(ILogger<ConsoleHostedService> logger, IHostApplicationLifetime appLifetime, IRunnersManager runnersManager, IFileOperationsUtil fileOperationsUtil)
     {
         _logger = logger;
         _appLifetime = appLifetime;
         _runnersManager = runnersManager;
-        _buildLibraryUtil = buildLibraryUtil;
+        _fileOperationsUtil = fileOperationsUtil;
     }
 
     public Task StartAsync(CancellationToken cancellationToken = default)
@@ -38,10 +37,10 @@ public sealed class ConsoleHostedService : IHostedService
 
                 try
                 {
-                    string filePath = await _buildLibraryUtil.Build(cancellationToken);
+                    await _fileOperationsUtil.Process(cancellationToken);
 
-                    await _runnersManager.PushIfChangesNeeded(filePath, Constants.FileName, Constants.Library,
-                        $"https://github.com/soenneker/{Constants.Library}", cancellationToken);
+                //    await _runnersManager.PushIfChangesNeeded(filePath, Constants.FileName, Constants.Library,
+                   //     $"https://github.com/soenneker/{Constants.Library}", cancellationToken);
 
                     _logger.LogInformation("Complete!");
 

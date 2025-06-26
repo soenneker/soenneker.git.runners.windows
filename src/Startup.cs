@@ -1,6 +1,8 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using Soenneker.Compression.SevenZip.Registrars;
 using Soenneker.Git.Runners.Windows.Utils;
 using Soenneker.Git.Runners.Windows.Utils.Abstract;
+using Soenneker.GitHub.Repositories.Releases.Registrars;
 using Soenneker.Managers.Runners.Registrars;
 using Soenneker.Utils.File.Download.Registrars;
 
@@ -22,8 +24,9 @@ public static class Startup
         services.AddHostedService<ConsoleHostedService>()
                 .AddScoped<IFileOperationsUtil, FileOperationsUtil>()
                 .AddFileDownloadUtilAsScoped()
-                .AddScoped<IBuildLibraryUtil, BuildLibraryUtil>()
-                .AddRunnersManagerAsScoped();
+                .AddGitHubRepositoriesReleasesUtilAsScoped()
+                .AddRunnersManagerAsScoped().
+                AddSevenZipCompressionUtilAsScoped();
 
         return services;
     }
