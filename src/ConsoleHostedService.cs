@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using LibGit2Sharp;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Soenneker.Git.Runners.Windows.Utils.Abstract;
