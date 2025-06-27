@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -44,7 +45,33 @@ public sealed class ConsoleHostedService : IHostedService
 
                     if (extractionDir != null)
                     {
-                        await _runnersManager.PushIfChangesNeededForDirectory(Path.Combine(@"win-x64", "git"), extractionDir, Constants.Library,
+                        var unnecessaryBinFiles = new List<string>
+                        {
+                            "Avalonia.Base.dll",
+                            "Avalonia.Controls.dll",
+                            "Avalonia.Win32.dll",
+                            "Avalonia.Themes.Fluent.dll",
+                            "Avalonia.Dialogs.dll",
+                            "Avalonia.DesignerSupport.dll",
+                            "libSkiaSharp.dll",
+                            "SkiaSharp.dll",
+                            "libHarfBuzzSharp.dll",
+                            "HarfBuzzSharp.dll",
+                            "System.Text.Json.dll",
+                            "System.CommandLine.dll"
+                        };
+
+                        foreach (var file in unnecessaryBinFiles)
+                        {
+                            var filePath = Path.Combine(extractionDir, "bin", file);
+                            if (File.Exists(filePath))
+                            {
+                                _logger.LogDebug("Removing unnecessary file: {filePath}", filePath);
+                                File.Delete(filePath);
+                            }
+                        }
+
+                        await _runnersManager.PushIfChangesNeededForDirectory(Path.Combine("win-x64", "git"), extractionDir, Constants.Library,
                             $"https://github.com/soenneker/{Constants.Library}", cancellationToken);
                     }
 
