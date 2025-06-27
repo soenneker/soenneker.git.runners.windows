@@ -9,6 +9,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Soenneker.Git.Runners.Windows.Utils.Abstract;
 using Soenneker.Managers.Runners.Abstract;
+using Soenneker.Utils.FileSync.Abstract;
 
 namespace Soenneker.Git.Runners.Windows;
 
@@ -19,16 +20,18 @@ public sealed class ConsoleHostedService : IHostedService
     private readonly IHostApplicationLifetime _appLifetime;
     private readonly IRunnersManager _runnersManager;
     private readonly IFileOperationsUtil _fileOperationsUtil;
+    private readonly IFileUtilSync _fileUtilSync;
 
     private int? _exitCode;
 
     public ConsoleHostedService(ILogger<ConsoleHostedService> logger, IHostApplicationLifetime appLifetime, IRunnersManager runnersManager,
-        IFileOperationsUtil fileOperationsUtil)
+        IFileOperationsUtil fileOperationsUtil, IFileUtilSync fileUtilSync)
     {
         _logger = logger;
         _appLifetime = appLifetime;
         _runnersManager = runnersManager;
         _fileOperationsUtil = fileOperationsUtil;
+        _fileUtilSync = fileUtilSync;
     }
 
     public Task StartAsync(CancellationToken cancellationToken = default)
@@ -61,14 +64,11 @@ public sealed class ConsoleHostedService : IHostedService
                             "System.CommandLine.dll"
                         };
 
-                        foreach (var file in unnecessaryBinFiles)
+                        foreach (string file in unnecessaryBinFiles)
                         {
-                            var filePath = Path.Combine(extractionDir, "bin", file);
-                            if (File.Exists(filePath))
-                            {
-                                _logger.LogDebug("Removing unnecessary file: {filePath}", filePath);
-                                File.Delete(filePath);
-                            }
+                            string filePath = Path.Combine(extractionDir, "bin", file);
+
+                            _fileUtilSync.TryDeleteIfExists(filePath);
                         }
 
                         await _runnersManager.PushIfChangesNeededForDirectory(Path.Combine("win-x64", "git"), extractionDir, Constants.Library,
