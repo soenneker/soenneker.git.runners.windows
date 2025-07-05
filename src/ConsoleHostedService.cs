@@ -8,7 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Soenneker.Git.Runners.Windows.Utils.Abstract;
 using Soenneker.Managers.Runners.Abstract;
-using Soenneker.Utils.FileSync.Abstract;
+using Soenneker.Utils.File.Abstract;
 
 namespace Soenneker.Git.Runners.Windows;
 
@@ -19,18 +19,18 @@ public sealed class ConsoleHostedService : IHostedService
     private readonly IHostApplicationLifetime _appLifetime;
     private readonly IRunnersManager _runnersManager;
     private readonly IFileOperationsUtil _fileOperationsUtil;
-    private readonly IFileUtilSync _fileUtilSync;
+    private readonly IFileUtil _fileUtil;
 
     private int? _exitCode;
 
     public ConsoleHostedService(ILogger<ConsoleHostedService> logger, IHostApplicationLifetime appLifetime, IRunnersManager runnersManager,
-        IFileOperationsUtil fileOperationsUtil, IFileUtilSync fileUtilSync)
+        IFileOperationsUtil fileOperationsUtil, IFileUtil fileUtil)
     {
         _logger = logger;
         _appLifetime = appLifetime;
         _runnersManager = runnersManager;
         _fileOperationsUtil = fileOperationsUtil;
-        _fileUtilSync = fileUtilSync;
+        _fileUtil = fileUtil;
     }
 
     public Task StartAsync(CancellationToken cancellationToken = default)
@@ -67,7 +67,7 @@ public sealed class ConsoleHostedService : IHostedService
                         {
                             string filePath = Path.Combine(extractionDir, "bin", file);
 
-                            _fileUtilSync.TryDeleteIfExists(filePath);
+                            await _fileUtil.TryDeleteIfExists(filePath, cancellationToken: cancellationToken);
                         }
 
                         await _runnersManager.PushIfChangesNeededForDirectory(Path.Combine("win-x64", "git"), extractionDir, Constants.Library,
