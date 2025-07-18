@@ -8,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Soenneker.Git.Runners.Windows.Utils.Abstract;
 using Soenneker.Managers.Runners.Abstract;
+using Soenneker.Utils.Delay;
 using Soenneker.Utils.File.Abstract;
 
 namespace Soenneker.Git.Runners.Windows;
@@ -85,7 +86,7 @@ public sealed class ConsoleHostedService : IHostedService
 
                     _logger.LogError(e, "Unhandled exception");
 
-                    await Task.Delay(2000, cancellationToken);
+                    await DelayUtil.Delay(2000, _logger, cancellationToken);
                     _exitCode = 1;
                 }
                 finally
