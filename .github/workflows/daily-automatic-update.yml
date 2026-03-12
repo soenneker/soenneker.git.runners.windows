@@ -26,7 +26,6 @@ env:
   NUGET_XMLDOC_MODE: skip
 
 jobs:
-
   daily-automatic-update:
     runs-on: windows-latest
   
@@ -38,7 +37,7 @@ jobs:
       - name: Setting up build version
         shell: pwsh
         run: |
-          $version = "3.0.$env:GITHUB_RUN_NUMBER"
+          $version = "4.0.$env:GITHUB_RUN_NUMBER"
           echo "BUILD_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8
 
       - name: Setup .NET
