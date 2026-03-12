@@ -1,4 +1,12 @@
 ﻿name: daily-automatic-update
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   schedule:
     - cron: "0 17 * * *"
@@ -14,7 +22,9 @@ env:
   GIT__EMAIL: ${{ secrets.GIT__EMAIL }}
   NUGET__TOKEN: ${{ secrets.NUGET__TOKEN }}
   GIT__TOKEN: ${{ secrets.GIT__TOKEN }}
-  
+  PipelineEnvironment: true
+  NUGET_XMLDOC_MODE: skip
+
 jobs:
 
   daily-automatic-update:
@@ -22,6 +32,8 @@ jobs:
   
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Setting up build version
         shell: pwsh
@@ -34,29 +46,11 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Install dependencies with retry
-        shell: pwsh
-        run: |
-          $retries = 5
-          $baseWaitTime = 15
-          $exponent = 2
+      - name: Restore
+        run: dotnet restore src/Soenneker.Git.Runners.Windows/Soenneker.Git.Runners.Windows.csproj --configuration Release
 
-          for ($i = 1; $i -le $retries; $i++) {
-            if (dotnet restore) {
-              break
-            }
-            if ($i -lt $retries) {
-              $waitTime = [math]::Pow($baseWaitTime * $exponent, $i - 1)
-              Write-Host "dotnet restore failed, retrying in $waitTime seconds..."
-              Start-Sleep -Seconds $waitTime
-            } else {
-              Write-Host "dotnet restore failed after $retries retries."
-              exit 1
-            }
-          }
-
-      - name: Build for all frameworks
-        run: dotnet build --configuration Release --no-restore
+      - name: Build
+        run: dotnet build src/Soenneker.Git.Runners.Windows/Soenneker.Git.Runners.Windows.csproj --configuration Release --no-restore
 
       - name: Run
-        run: dotnet run --project src/Soenneker.Git.Runners.Windows.csproj --no-restore --verbosity normal --framework net10.0 --configuration Release
+        run: dotnet run --project src/Soenneker.Git.Runners.Windows/Soenneker.Git.Runners.Windows.csproj --configuration Release --no-restore --no-build --verbosity normal
