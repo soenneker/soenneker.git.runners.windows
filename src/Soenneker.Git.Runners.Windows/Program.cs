@@ -6,7 +6,6 @@ using Microsoft.Extensions.Hosting;
 using Serilog;
 using Soenneker.Enums.DeployEnvironment;
 using Soenneker.Extensions.LoggerConfiguration;
-using Soenneker.Extensions.ValueTask;
 using Soenneker.Extensions.String;
 
 namespace Soenneker.Git.Runners.Windows;
