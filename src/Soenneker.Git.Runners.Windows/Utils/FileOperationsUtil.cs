@@ -30,7 +30,7 @@ public sealed class FileOperationsUtil : IFileOperationsUtil
     {
         string downloadDir = await _directoryUtil.CreateTempDirectory(cancellationToken);
 
-        string? asset = await _releasesUtil.DownloadReleaseAssetByNamePattern("git-for-windows", "git", downloadDir, ["MinGit", "64-bit"], cancellationToken);
+        string? asset = await _releasesUtil.DownloadReleaseAssetByNamePattern("git-for-windows", "git", downloadDir, ["MinGit", "64-bit"],  cancellationToken);
 
         if (asset == null)
             throw new FileNotFoundException("Could not find the required Git for Windows Portable asset.");
