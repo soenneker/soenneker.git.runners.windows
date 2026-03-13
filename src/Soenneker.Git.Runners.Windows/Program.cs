@@ -7,6 +7,7 @@ using Serilog;
 using Soenneker.Enums.DeployEnvironment;
 using Soenneker.Extensions.LoggerConfiguration;
 using Soenneker.Extensions.ValueTask;
+using Soenneker.Extensions.String;
 
 namespace Soenneker.Git.Runners.Windows;
 
@@ -20,7 +21,7 @@ public sealed class Program
     {
         _environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
 
-        if (string.IsNullOrWhiteSpace(_environment))
+        if (_environment.IsNullOrWhiteSpace())
             throw new Exception("ASPNETCORE_ENVIRONMENT is not set");
 
         // Declare CancellationTokenSource in a broader scope
@@ -41,7 +42,7 @@ public sealed class Program
             Console.CancelKeyPress -= OnCancelKeyPress; // Detach the handler
 
             _cts.Dispose();
-            await Log.CloseAndFlushAsync().NoSync();
+            await Log.CloseAndFlushAsync();
         }
     }
 
