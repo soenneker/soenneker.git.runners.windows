@@ -9,9 +9,9 @@ namespace Soenneker.Git.Runners.Windows.Utils.Abstract;
 public interface IFileOperationsUtil
 {
     /// <summary>
-    /// Executes the process operation.
+    /// Processes the pending work managed by the file operations.
     /// </summary>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>A task containing the result of the operation.</returns>
+    /// <param name="cancellationToken">Token used to cancel the operation.</param>
+    /// <returns>A task whose result is the text returned by process.</returns>
     ValueTask<string?> Process(CancellationToken cancellationToken = default);
 }
