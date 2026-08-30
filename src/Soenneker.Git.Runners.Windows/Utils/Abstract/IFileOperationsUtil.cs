@@ -4,14 +4,14 @@ using System.Threading.Tasks;
 namespace Soenneker.Git.Runners.Windows.Utils.Abstract;
 
 /// <summary>
-/// Defines the file operations util contract.
+/// Downloads and extracts the Windows Git distribution consumed by the runner.
 /// </summary>
 public interface IFileOperationsUtil
 {
     /// <summary>
-    /// Processes the pending work managed by the file operations.
+    /// Downloads and extracts the selected Git for Windows release asset.
     /// </summary>
     /// <param name="cancellationToken">Token used to cancel the operation.</param>
-    /// <returns>A task whose result is the text returned by process.</returns>
-    ValueTask<string?> Process(CancellationToken cancellationToken = default);
+    /// <returns>The path to the extracted distribution directory.</returns>
+    ValueTask<string> Process(CancellationToken cancellationToken = default);
 }

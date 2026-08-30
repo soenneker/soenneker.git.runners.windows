@@ -51,11 +51,9 @@ public sealed class ConsoleHostedService : IHostedService
 
                 try
                 {
-                    string? extractionDir = await _fileOperationsUtil.Process(cancellationToken);
+                    string extractionDir = await _fileOperationsUtil.Process(cancellationToken);
 
-                    if (extractionDir != null)
-                    {
-                        var unnecessaryBinFiles = new List<string>
+                    var unnecessaryBinFiles = new List<string>
                         {
                             "Avalonia.Base.dll",
                             "Avalonia.Controls.dll",
@@ -71,16 +69,15 @@ public sealed class ConsoleHostedService : IHostedService
                             "System.CommandLine.dll"
                         };
 
-                        foreach (string file in unnecessaryBinFiles)
-                        {
-                            string filePath = Path.Combine(extractionDir, "bin", file);
+                    foreach (string file in unnecessaryBinFiles)
+                    {
+                        string filePath = Path.Combine(extractionDir, "bin", file);
 
-                            await _fileUtil.TryDeleteIfExists(filePath, cancellationToken: cancellationToken);
-                        }
-
-                        await _runnersManager.PushIfChangesNeededForDirectory(Path.Combine("win-x64", "git"), extractionDir, Constants.Library,
-                            $"https://github.com/soenneker/{Constants.Library}", false, cancellationToken);
+                        await _fileUtil.TryDeleteIfExists(filePath, cancellationToken: cancellationToken);
                     }
+
+                    await _runnersManager.PushIfChangesNeededForDirectory(Path.Combine("win-x64", "git"), extractionDir, Constants.Library,
+                        $"https://github.com/soenneker/{Constants.Library}", false, cancellationToken);
 
                     _logger.LogInformation("Complete!");
 

@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 
 namespace Soenneker.Git.Runners.Windows.Utils;
 
-/// <inheritdoc cref="IFileOperationsUtil"/>
 public sealed class FileOperationsUtil : IFileOperationsUtil
 {
     private readonly IDirectoryUtil _directoryUtil;
@@ -23,7 +22,7 @@ public sealed class FileOperationsUtil : IFileOperationsUtil
         _sevenZipCompressionUtil = sevenZipCompressionUtil;
     }
 
-    public async ValueTask<string?> Process(CancellationToken cancellationToken)
+    public async ValueTask<string> Process(CancellationToken cancellationToken)
     {
         string downloadDir = await _directoryUtil.CreateTempDirectory(cancellationToken);
 
@@ -32,6 +31,11 @@ public sealed class FileOperationsUtil : IFileOperationsUtil
         if (asset == null)
             throw new FileNotFoundException("Could not find the required Git for Windows Portable asset.");
 
-        return await _sevenZipCompressionUtil.Extract(asset, cancellationToken);
+        string? extractionDirectory = await _sevenZipCompressionUtil.Extract(asset, cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(extractionDirectory))
+            throw new InvalidDataException("The Git for Windows asset did not produce an extraction directory.");
+
+        return extractionDirectory;
     }
 }
