@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 
 namespace Soenneker.Git.Runners.Windows.Utils;
 
+/// <inheritdoc cref="IFileOperationsUtil" />
 public sealed class FileOperationsUtil : IFileOperationsUtil
 {
     private readonly IDirectoryUtil _directoryUtil;
