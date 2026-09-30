@@ -1,4 +1,4 @@
-﻿using Soenneker.Compression.SevenZip.Abstract;
+using Soenneker.Compression.SevenZip.Abstract;
 using Soenneker.Git.Runners.Windows.Utils.Abstract;
 using Soenneker.GitHub.Repositories.Releases.Abstract;
 using Soenneker.Utils.Directory.Abstract;
@@ -8,9 +8,11 @@ using System.Threading.Tasks;
 
 namespace Soenneker.Git.Runners.Windows.Utils;
 
-/// <inheritdoc cref="IFileOperationsUtil" />
 public sealed class FileOperationsUtil : IFileOperationsUtil
 {
+    public string? Version { get; private set; }
+
+
     private readonly IDirectoryUtil _directoryUtil;
     private readonly IGitHubRepositoriesReleasesUtil _releasesUtil;
     private readonly ISevenZipCompressionUtil _sevenZipCompressionUtil;
@@ -37,6 +39,7 @@ public sealed class FileOperationsUtil : IFileOperationsUtil
         if (string.IsNullOrWhiteSpace(extractionDirectory))
             throw new InvalidDataException("The Git for Windows asset did not produce an extraction directory.");
 
+        Version = System.Text.RegularExpressions.Regex.Match(Path.GetFileName(asset), @"\d+\.\d+\.\d+(?:\.\d+)?").Value;
         return extractionDirectory;
     }
 }

@@ -1,4 +1,4 @@
-﻿using System.Threading;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Soenneker.Git.Runners.Windows.Utils.Abstract;
@@ -8,6 +8,10 @@ namespace Soenneker.Git.Runners.Windows.Utils.Abstract;
 /// </summary>
 public interface IFileOperationsUtil
 {
+    /// <summary>Gets the version of the prepared distribution.</summary>
+    string? Version { get; }
+
+
     /// <summary>
     /// Downloads and extracts the selected Git for Windows release asset.
     /// </summary>

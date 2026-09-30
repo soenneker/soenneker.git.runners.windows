@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -77,7 +77,7 @@ public sealed class ConsoleHostedService : IHostedService
                     }
 
                     await _runnersManager.PushIfChangesNeededForDirectory(Path.Combine("win-x64", "git"), extractionDir, Constants.Library,
-                        $"https://github.com/soenneker/{Constants.Library}", false, cancellationToken);
+                        $"https://github.com/soenneker/{Constants.Library}", false, cancellationToken, upstreamVersion: _fileOperationsUtil.Version);
 
                     _logger.LogInformation("Complete!");
 
