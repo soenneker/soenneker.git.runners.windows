@@ -49,6 +49,6 @@
         <PackageReference Include="Soenneker.Utils.File.Download" Version="11.0.1854" />
     </ItemGroup>
     <ItemGroup>
-        <PackageReference Include="Soenneker.Enums.DeployEnvironment" Version="11.0.264" />
+        <PackageReference Include="Soenneker.Enums.DeployEnvironment" Version="11.0.265" />
     </ItemGroup>
 </Project>
